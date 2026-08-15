@@ -79,7 +79,7 @@ with tab1:
                     st.success("紀錄已成功永久保存！")
             except Exception as e:
                 st.error(f"分析失敗: {e}")
-
+                st.rerun()
 with tab2:
     st.subheader("我的飲食日誌")
     
