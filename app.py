@@ -62,25 +62,29 @@ with tab1:
                     response = model.generate_content([image, prompt])
                     st.markdown(response.text)
                 
-                # 儲存紀錄按鈕
-                if st.button("➕ 將此餐點加入紀錄"):
-                    new_log = {
-                        "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                        "身高": height,
-                        "體重": weight,
-                        "病史": medical_history,
-                        "內容": response.text
-                    }
-                    st.session_state.food_logs.append(new_log)
-                    
-                    # 寫入 CSV 檔案
-                    df_to_save = pd.DataFrame(st.session_state.food_logs)
-                    df_to_save.to_csv(LOG_FILE, index=False)
-                    
-                    st.success("紀錄已成功永久保存！")
-                    st.rerun() # 立即重新整理讓日誌生效
+                # 將分析結果暫存於 session 中，以便按鈕點擊後寫入
+                st.session_state["latest_analysis"] = response.text
+
             except Exception as e:
                 st.error(f"分析失敗: {e}")
+
+        # 獨立的儲存按鈕（避免因為畫面重整而漏掉點擊）
+        if "latest_analysis" in st.session_state:
+            if st.button("➕ 將此餐點加入紀錄"):
+                new_log = {
+                    "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                    "身高": height,
+                    "體重": weight,
+                    "病史": medical_history,
+                    "內容": st.session_state["latest_analysis"]
+                }
+                st.session_state.food_logs.append(new_log)
+                
+                # 寫入 CSV 檔案
+                df_to_save = pd.DataFrame(st.session_state.food_logs)
+                df_to_save.to_csv(LOG_FILE, index=False)
+                
+                st.success("紀錄已成功永久保存！請切換至「📊 飲食日誌」查看。")
 
 with tab2:
     st.subheader("我的飲食日誌")
@@ -91,7 +95,7 @@ with tab2:
         st.rerun()
     
     if not st.session_state.food_logs:
-        st.info("目前尚無任何飲食紀錄，快去拍照照片開始記錄吧！")
+        st.info("目前尚無任何飲食紀錄，快去拍照並儲存餐點吧！")
     else:
         for i, log in enumerate(st.session_state.food_logs):
             date_str = log.get("日期", f"紀錄 #{i+1}")
