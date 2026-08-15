@@ -79,9 +79,12 @@ with tab1:
     image_to_process = camera_file if camera_file else uploaded_file
 
     if image_to_process:
-        # 讀取並自動壓縮圖片尺寸，避免過大導致上傳失敗
+        # 讀取圖片並進行更嚴格的壓縮與調整大小
         image = Image.open(image_to_process)
-        image.thumbnail((1024, 1024))  # 限制最大長寬
+        # 將畫質降至 800x800，並轉為 RGB 模式（確保相容性）
+        image.thumbnail((800, 800))
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
 
         st.image(image, caption="準備分析的餐點", use_container_width=True)
 
