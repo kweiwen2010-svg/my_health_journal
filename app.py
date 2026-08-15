@@ -54,7 +54,7 @@ with tab1:
 
         if st.button("✨ 開始 AI 營養分析"):
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash") # 使用最新模型
+                model = genai.GenerativeModel("gemini-2.5-flash") # 使用最新模型
                 prompt = f"你是專業營養師。參考病史：「{medical_history}」，分析此食物的名稱、份量、熱量與建議。"
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
