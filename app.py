@@ -31,41 +31,63 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 
-# 3. 側邊欄：使用者基本資料設定
+# 3. 初始化個人資料的 Session State (如果沒有就給預設值)
+if "profile" not in st.session_state:
+    st.session_state.profile = {
+        "age": 30,
+        "height": 170.0,
+        "weight": 65.0,
+        "activity": "久坐少動 (Little/no exercise)",
+        "medical_history": "無",
+    }
+
+# 4. 側邊欄：使用者基本資料設定 (從 session_state 讀取預設值)
 st.sidebar.header("個人基本資料")
-age = st.sidebar.slider("年齡", 10, 100, 30)
-height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, 170.0)
-weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, 65.0)
+
+# 讓輸入框綁定目前的狀態
+age = st.sidebar.slider(
+    "年齡", 10, 100, st.session_state.profile["age"]
+)
+height = st.sidebar.number_input(
+    "身高 (cm)", 100.0, 220.0, st.session_state.profile["height"]
+)
+weight = st.sidebar.number_input(
+    "體重 (kg)", 30.0, 150.0, st.session_state.profile["weight"]
+)
+
+activity_options = [
+    "久坐少動 (Little/no exercise)",
+    "輕度運動 (Light exercise)",
+    "中度運動 (Moderate exercise)",
+    "高度運動 (Heavy exercise)",
+]
+default_activity_idx = activity_options.index(
+    st.session_state.profile["activity"]
+)
 activity = st.sidebar.selectbox(
-    "運動狀態",
-    [
-        "久坐少動 (Little/no exercise)",
-        "輕度運動 (Light exercise)",
-        "中度運動 (Moderate exercise)",
-        "高度運動 (Heavy exercise)",
-    ],
+    "運動狀態", activity_options, index=default_activity_idx
 )
+
 medical_history = st.sidebar.text_area(
-    "病史 / 飲食禁忌", placeholder="例如：高血壓、糖尿病、無"
+    "病史 / 飲食禁忌", value=st.session_state.profile["medical_history"]
 )
 
-# 計算 BMR 與 TDEE (Mifflin-St Jeor 公式)
-bmr = 10 * weight + 6.25 * height - 5 * age + 5  # 預設係數
-activity_multipliers = {
-    "久坐少動 (Little/no exercise)": 1.2,
-    "輕度運動 (Light exercise)": 1.375,
-    "中度運動 (Moderate exercise)": 1.55,
-    "高度運動 (Heavy exercise)": 1.725,
-}
-tdee = int(bmr * activity_multipliers[activity])
+# 儲存按鈕
+if st.sidebar.button("💾 儲存我的個人設定"):
+    st.session_state.profile = {
+        "age": age,
+        "height": height,
+        "weight": weight,
+        "activity": activity,
+        "medical_history": medical_history,
+    }
+    st.sidebar.success("個人資料已儲存！")
 
-st.sidebar.markdown(f"### 🎯 每日建議熱量 (TDEE): **{tdee} kcal**")
-
-# 4. 初始化 Session State 記錄當日飲食
+# 5. 初始化 Session State 記錄當日飲食
 if "food_logs" not in st.session_state:
     st.session_state.food_logs = []
 
-# 5. 主畫面分頁
+# 6. 主畫面分頁
 tab1, tab2 = st.tabs(["📸 拍照記錄飲食", "📊 今日營養清單與建議"])
 
 with tab1:
