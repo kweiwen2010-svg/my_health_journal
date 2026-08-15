@@ -29,13 +29,22 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 4. 側邊欄：個人設定
+# 4. 側邊欄：個人設定（加入 session_state 記憶機制）
 st.sidebar.header("個人基本資料")
-age = st.sidebar.slider("年齡", 10, 100, 30)
-height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, 170.0)
-weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, 65.0)
-activity = st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"])
-medical_history = st.sidebar.text_area("病史 / 飲食禁忌")
+
+# 初始化預設值
+if "user_age" not in st.session_state: st.session_state.user_age = 30
+if "user_height" not in st.session_state: st.session_state.user_height = 170.0
+if "user_weight" not in st.session_state: st.session_state.user_weight = 65.0
+if "user_activity" not in st.session_state: st.session_state.user_activity = "久坐少動"
+if "user_medical" not in st.session_state: st.session_state.user_medical = ""
+
+# 綁定狀態的側欄元件
+age = st.sidebar.slider("年齡", 10, 100, key="user_age")
+height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, key="user_height")
+weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, key="user_weight")
+activity = st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"], key="user_activity")
+medical_history = st.sidebar.text_area("病史 / 飲食禁忌", key="user_medical")
 
 # 5. 主畫面與拍照
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
