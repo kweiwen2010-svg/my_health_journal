@@ -14,7 +14,7 @@ if not api_key:
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 初始化：讀取飲食記錄與個人設定檔
+# 3. 初始化：讀取個人設定檔與飲食記錄
 PROFILE_FILE = "user_profile.csv"
 LOG_FILE = "food_log.csv"
 
@@ -29,7 +29,10 @@ if "profile" not in st.session_state:
 # 載入飲食日誌
 if "food_logs" not in st.session_state:
     if os.path.exists(LOG_FILE):
-        st.session_state.food_logs = pd.read_csv(LOG_FILE).to_dict("records")
+        try:
+            st.session_state.food_logs = pd.read_csv(LOG_FILE).to_dict("records")
+        except:
+            st.session_state.food_logs = []
     else:
         st.session_state.food_logs = []
 
@@ -50,7 +53,6 @@ if st.session_state.profile is None:
                 "age": age, "height": height, "weight": weight, 
                 "activity": activity, "medical": medical
             }
-            # 存入 Session 並寫入 CSV
             st.session_state.profile = profile_data
             pd.DataFrame([profile_data]).to_csv(PROFILE_FILE, index=False)
             st.rerun()
@@ -71,33 +73,72 @@ else:
     tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
 
     with tab1:
+        # 【第二階段新增】選擇餐別
+        meal_type = st.selectbox("選擇餐別", ["早餐", "午餐", "晚餐", "點心/其他"])
+        
         camera_file = st.camera_input("拍攝你的餐點")
         uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
         image_to_process = camera_file or uploaded_file
 
         if image_to_process:
             image = Image.open(image_to_process)
+            image.thumbnail((800, 800))
+            if image.mode != 'RGB': 
+                image = image.convert('RGB')
+                
             st.image(image, use_container_width=True)
 
             if st.button("✨ 開始 AI 營養分析"):
-                with st.spinner("AI 正在分析..."):
+                with st.spinner("AI 正在分析營養素..."):
                     model = genai.GenerativeModel("gemini-2.5-flash")
-                    prompt = f"使用者背景：{st.session_state.profile}。請分析此食物的名稱、份量、熱量與建議。"
+                    # 【第二階段優化】精準要求回傳營養素結構
+                    prompt = (
+                        f"你是專業營養師。使用者背景：{st.session_state.profile}。"
+                        f"本次記錄餐別為：{meal_type}。"
+                        f"請分析此食物的名稱、份量、預估總熱量(大卡)，"
+                        f"以及蛋白質、澱粉(碳水化合物)、脂肪的大約克數(g)，並給予健康建議。"
+                    )
                     response = model.generate_content([image, prompt])
                     st.session_state.last_analysis = response.text
             
             if "last_analysis" in st.session_state:
+                st.markdown("### 💡 分析結果")
                 st.markdown(st.session_state.last_analysis)
-                if st.button("➕ 確認加入紀錄"):
-                    new_log = {"日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"), "內容": st.session_state.last_analysis}
+                
+                if st.button("➕ 確認將此餐點加入紀錄"):
+                    new_log = {
+                        "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                        "餐別": meal_type,
+                        "體重": st.session_state.profile['weight'],
+                        "內容": st.session_state.last_analysis
+                    }
                     st.session_state.food_logs.append(new_log)
-                    pd.DataFrame(st.session_state.food_logs).to_csv(LOG_FILE, index=False)
+                    
+                    # 寫入 CSV 檔案
+                    df_to_save = pd.DataFrame(st.session_state.food_logs)
+                    df_to_save.to_csv(LOG_FILE, index=False)
+                    
                     del st.session_state.last_analysis
-                    st.success("紀錄已保存！")
+                    st.success("紀錄已成功永久保存！")
                     st.rerun()
 
     with tab2:
         st.subheader("我的飲食日誌")
-        for log in reversed(st.session_state.food_logs):
-            st.write(f"📅 {log['日期']}")
-            st.markdown(log['內容'])
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🗑️ 清空所有紀錄"):
+                st.session_state.food_logs = []
+                if os.path.exists(LOG_FILE): 
+                    os.remove(LOG_FILE)
+                st.rerun()
+                
+        if not st.session_state.food_logs:
+            st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
+        else:
+            for i, log in enumerate(reversed(st.session_state.food_logs)):
+                date_str = log.get("日期", f"紀錄 #{i+1}")
+                m_type = log.get("餐別", "餐點")
+                
+                with st.expander(f"📅 {date_str} 【{m_type}】"):
+                    st.markdown(log.get('內容', ''))
