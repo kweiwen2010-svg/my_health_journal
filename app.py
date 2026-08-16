@@ -15,10 +15,9 @@ if not api_key:
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 永久儲存設定 (CSV)
+# 3. 永久儲存設定 (CSV) 與 Session State 初始化
 LOG_FILE = "food_log.csv"
 
-# 初始化讀取歷史記錄
 if "food_logs" not in st.session_state:
     if os.path.exists(LOG_FILE):
         try:
@@ -29,13 +28,29 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 4. 側邊欄：個人設定
+# 初始化側欄基本資料的 session_state 預設值
+if "user_age" not in st.session_state:
+    st.session_state.user_age = 30
+if "user_height" not in st.session_state:
+    st.session_state.user_height = 170.0
+if "user_weight" not in st.session_state:
+    st.session_state.user_weight = 65.0
+if "user_activity" not in st.session_state:
+    st.session_state.user_activity = "久坐少動"
+if "user_medical" not in st.session_state:
+    st.session_state.user_medical = ""
+
+# 4. 側邊欄：個人設定（綁定 session_state 確保不歸零）
 st.sidebar.header("個人基本資料")
-age = st.sidebar.slider("年齡", 10, 100, 30)
-height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, 170.0)
-weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, 65.0)
-activity = st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"])
-medical_history = st.sidebar.text_area("病史 / 飲食禁忌")
+st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, st.session_state.user_age)
+st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, st.session_state.user_height)
+st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, st.session_state.user_weight)
+st.session_state.user_activity = st.sidebar.selectbox(
+    "運動狀態", 
+    ["久坐少動", "輕度運動", "中度運動", "高度運動"], 
+    index=["久坐少動", "輕度運動", "中度運動", "高度運動"].index(st.session_state.user_activity)
+)
+st.session_state.user_medical = st.sidebar.text_area("病史 / 飲食禁忌", st.session_state.user_medical)
 
 # 5. 主畫面與拍照
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
@@ -57,10 +72,14 @@ with tab1:
         if st.button("✨ 開始 AI 營養分析"):
             try:
                 model = genai.GenerativeModel("gemini-2.5-flash")
-                prompt = f"你是專業營養師。參考病史：「{medical_history}」，分析此食物的名稱、份量、熱量與建議。"
+                prompt = (
+                    f"你是專業營養師。使用者背景：年齡 {st.session_state.user_age} 歲、"
+                    f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
+                    f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
+                    f"請分析此食物的名稱、份量、熱量與建議。"
+                )
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
-                    # 將分析結果暫存於 session_state 避免重新整理後消失
                     st.session_state.last_analysis = response.text
             except Exception as e:
                 st.error(f"分析失敗: {e}")
@@ -73,9 +92,9 @@ with tab1:
             if st.button("➕ 將此餐點加入紀錄"):
                 new_log = {
                     "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                    "身高": height,
-                    "體重": weight,
-                    "病史": medical_history,
+                    "身高": st.session_state.user_height,
+                    "體重": st.session_state.user_weight,
+                    "病史": st.session_state.user_medical,
                     "內容": st.session_state.last_analysis
                 }
                 st.session_state.food_logs.append(new_log)
