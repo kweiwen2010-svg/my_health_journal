@@ -28,7 +28,7 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 初始化側欄基本資料的預設值
+# 初始化所有互動元件的 session_state 預設值（確保絕不歸零）
 if "user_age" not in st.session_state:
     st.session_state.user_age = 30
 if "user_height" not in st.session_state:
@@ -39,8 +39,10 @@ if "user_activity" not in st.session_state:
     st.session_state.user_activity = "久坐少動"
 if "user_medical" not in st.session_state:
     st.session_state.user_medical = ""
+if "selected_meal_type" not in st.session_state:
+    st.session_state.selected_meal_type = "午餐"
 
-# 4. 側邊欄：個人設定（使用 key 參數確保數值穩定保留）
+# 4. 側邊欄：個人設定（強制綁定 key）
 st.sidebar.header("個人基本資料")
 st.sidebar.slider("年齡", 10, 100, key="user_age")
 st.sidebar.number_input("身高 (cm)", 100.0, 220.0, key="user_height")
@@ -52,8 +54,12 @@ st.sidebar.text_area("病史 / 飲食禁忌", key="user_medical")
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
 
 with tab1:
-    # 【第二階段新增】選擇餐別
-    meal_type = st.selectbox("選擇餐別", ["早餐", "午餐", "晚餐", "點心"])
+    # 選擇餐別（強制綁定 key，防止重整跑掉）
+    current_meal_type = st.selectbox(
+        "選擇餐別", 
+        ["早餐", "午餐", "晚餐", "點心"], 
+        key="selected_meal_type"
+    )
 
     camera_file = st.camera_input("拍攝你的餐點")
     uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
@@ -65,14 +71,14 @@ with tab1:
         if image.mode != 'RGB': 
             image = image.convert('RGB')
         
-        st.image(image, caption=f"已載入 {meal_type} 餐點圖片", use_container_width=True)
+        st.image(image, caption=f"已載入 {current_meal_type} 餐點圖片", use_container_width=True)
 
         # 點擊按鈕進行分析
         if st.button("✨ 開始 AI 營養分析"):
             try:
                 model = genai.GenerativeModel("gemini-2.5-flash")
                 prompt = (
-                    f"你是專業營養師。這是一份【{meal_type}】的餐點。"
+                    f"你是專業營養師。這是一份【{current_meal_type}】的餐點。"
                     f"使用者背景：年齡 {st.session_state.user_age} 歲、"
                     f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
                     f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
@@ -81,20 +87,20 @@ with tab1:
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
                     st.session_state.last_analysis = response.text
-                    st.session_state.last_meal_type = meal_type # 記錄當下的餐別
+                    st.session_state.analyzed_meal_type = current_meal_type
             except Exception as e:
                 st.error(f"分析失敗: {e}")
 
         # 當有分析結果時，顯示結果與「加入紀錄」按鈕
         if "last_analysis" in st.session_state:
-            st.markdown(f"### 💡 【{st.session_state.get('last_meal_type', meal_type)}】分析結果")
+            active_meal = st.session_state.get('analyzed_meal_type', current_meal_type)
+            st.markdown(f"### 💡 【{active_meal}】分析結果")
             st.markdown(st.session_state.last_analysis)
             
             if st.button("➕ 將此餐點加入紀錄"):
-                current_meal = st.session_state.get('last_meal_type', meal_type)
                 new_log = {
                     "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                    "餐別": current_meal,
+                    "餐別": active_meal,
                     "身高": st.session_state.user_height,
                     "體重": st.session_state.user_weight,
                     "病史": st.session_state.user_medical,
@@ -108,8 +114,8 @@ with tab1:
                 
                 # 清除暫存並提示
                 del st.session_state.last_analysis
-                if "last_meal_type" in st.session_state:
-                    del st.session_state.last_meal_type
+                if "analyzed_meal_type" in st.session_state:
+                    del st.session_state.analyzed_meal_type
                 
                 st.success("紀錄已成功永久保存！")
                 st.rerun()
