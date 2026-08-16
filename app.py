@@ -28,7 +28,7 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 初始化所有互動元件的 session_state 預設值（確保絕不歸零）
+# 初始化所有互動元件的 session_state 預設值（只在第一次啟動時賦值）
 if "user_age" not in st.session_state:
     st.session_state.user_age = 30
 if "user_height" not in st.session_state:
@@ -42,24 +42,26 @@ if "user_medical" not in st.session_state:
 if "selected_meal_type" not in st.session_state:
     st.session_state.selected_meal_type = "午餐"
 
-# 4. 側邊欄：個人設定（強制綁定 key）
+# 4. 側邊欄：個人設定（透過 value 參數直接綁定 session_state，徹底防止重置）
 st.sidebar.header("個人基本資料")
-st.sidebar.slider("年齡", 10, 100, key="user_age")
-st.sidebar.number_input("身高 (cm)", 100.0, 220.0, key="user_height")
-st.sidebar.number_input("體重 (kg)", 30.0, 150.0, key="user_weight")
-st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"], key="user_activity")
-st.sidebar.text_area("病史 / 飲食禁忌", key="user_medical")
+st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age)
+st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height)
+st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, value=st.session_state.user_weight)
+
+activity_list = ["久坐少動", "輕度運動", "中度運動", "高度運動"]
+current_act_idx = activity_list.index(st.session_state.user_activity) if st.session_state.user_activity in activity_list else 0
+st.session_state.user_activity = st.sidebar.selectbox("運動狀態", activity_list, index=current_act_idx)
+
+st.session_state.user_medical = st.sidebar.text_area("病史 / 飲食禁忌", value=st.session_state.user_medical)
 
 # 5. 主畫面與拍照
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
 
 with tab1:
-    # 選擇餐別（強制綁定 key，防止重整跑掉）
-    current_meal_type = st.selectbox(
-        "選擇餐別", 
-        ["早餐", "午餐", "晚餐", "點心"], 
-        key="selected_meal_type"
-    )
+    meal_list = ["早餐", "午餐", "晚餐", "點心"]
+    current_meal_idx = meal_list.index(st.session_state.selected_meal_type) if st.session_state.selected_meal_type in meal_list else 1
+    current_meal_type = st.selectbox("選擇餐別", meal_list, index=current_meal_idx)
+    st.session_state.selected_meal_type = current_meal_type
 
     camera_file = st.camera_input("拍攝你的餐點")
     uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
@@ -133,10 +135,15 @@ with tab2:
     if not st.session_state.food_logs:
         st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
     else:
-        # 讓最新紀錄顯示在最上方
+        # 讓最新紀錄顯示在最上方，並加入安全防護避免 nan
         for i, log in enumerate(reversed(st.session_state.food_logs)):
             date_str = log.get("日期", f"紀錄 #{i+1}")
-            m_type = log.get("餐別", "餐點")
             
-            with st.expander(f"📅 {date_str} - 【{m_type}】 (體重: {log.get('體重', 'N/A')}kg)"):
+            raw_m_type = log.get("餐別")
+            m_type = raw_m_type if pd.notna(raw_m_type) else "餐點"
+            
+            raw_weight = log.get("體重")
+            w_str = f"{raw_weight}kg" if pd.notna(raw_weight) else "N/A"
+            
+            with st.expander(f"📅 {date_str} - 【{m_type}】 (體重: {w_str})"):
                 st.markdown(log.get("內容", ""))
