@@ -47,53 +47,63 @@ with tab1:
 
     if image_to_process:
         image = Image.open(image_to_process)
-        image.thumbnail((800, 800)) # 嚴格壓縮圖片尺寸
+        image.thumbnail((800, 800))  # 嚴格壓縮圖片尺寸
         if image.mode != 'RGB': 
             image = image.convert('RGB')
         
-        st.image(image, caption="分析中...", use_container_width=True)
+        st.image(image, caption="已載入餐點圖片", use_container_width=True)
 
+        # 點擊按鈕進行分析
         if st.button("✨ 開始 AI 營養分析"):
             try:
-                # 使用正確的模型名稱
                 model = genai.GenerativeModel("gemini-2.5-flash")
                 prompt = f"你是專業營養師。參考病史：「{medical_history}」，分析此食物的名稱、份量、熱量與建議。"
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
-                    st.markdown(response.text)
-                
-                # 儲存紀錄按鈕
-                if st.button("➕ 將此餐點加入紀錄"):
-                    new_log = {
-                        "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                        "身高": height,
-                        "體重": weight,
-                        "病史": medical_history,
-                        "內容": response.text
-                    }
-                    st.session_state.food_logs.append(new_log)
-                    
-                    # 寫入 CSV 檔案
-                    df_to_save = pd.DataFrame(st.session_state.food_logs)
-                    df_to_save.to_csv(LOG_FILE, index=False)
-                    
-                    st.success("紀錄已成功永久保存！")
-                    st.rerun() # 立即重新整理讓日誌生效
+                    # 將分析結果暫存於 session_state 避免重新整理後消失
+                    st.session_state.last_analysis = response.text
             except Exception as e:
                 st.error(f"分析失敗: {e}")
 
+        # 當有分析結果時，顯示結果與「加入紀錄」按鈕
+        if "last_analysis" in st.session_state:
+            st.markdown("### 💡 分析結果")
+            st.markdown(st.session_state.last_analysis)
+            
+            if st.button("➕ 將此餐點加入紀錄"):
+                new_log = {
+                    "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                    "身高": height,
+                    "體重": weight,
+                    "病史": medical_history,
+                    "內容": st.session_state.last_analysis
+                }
+                st.session_state.food_logs.append(new_log)
+                
+                # 寫入 CSV 檔案
+                df_to_save = pd.DataFrame(st.session_state.food_logs)
+                df_to_save.to_csv(LOG_FILE, index=False)
+                
+                # 清除暫存並提示
+                del st.session_state.last_analysis
+                st.success("紀錄已成功永久保存！")
+                st.rerun()
+
 with tab2:
     st.subheader("我的飲食日誌")
-    if st.button("🗑️ 清空所有紀錄"):
-        st.session_state.food_logs = []
-        if os.path.exists(LOG_FILE): 
-            os.remove(LOG_FILE)
-        st.rerun()
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🗑️ 清空所有紀錄"):
+            st.session_state.food_logs = []
+            if os.path.exists(LOG_FILE): 
+                os.remove(LOG_FILE)
+            st.rerun()
     
     if not st.session_state.food_logs:
-        st.info("目前尚無任何飲食紀錄，快去拍照照片開始記錄吧！")
+        st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
     else:
-        for i, log in enumerate(st.session_state.food_logs):
+        # 讓最新紀錄顯示在最上方
+        for i, log in enumerate(reversed(st.session_state.food_logs)):
             date_str = log.get("日期", f"紀錄 #{i+1}")
             content = log.get("內容") or log.get("details", str(log))
             
