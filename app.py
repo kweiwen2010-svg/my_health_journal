@@ -6,139 +6,131 @@ from PIL import Image
 
 # 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
+st.title("🥗 AI 智慧營養與飲食記錄器")
 
-# 2. API Key 設定
+# 2. 自動載入 API Key
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    st.error("❌ 找不到 Gemini API Key！")
+    st.error("❌ 找不到 Gemini API Key！請檢查 Streamlit Secrets 設定。")
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 初始化：讀取個人設定檔與飲食記錄
-PROFILE_FILE = "user_profile.csv"
+# 3. 永久儲存設定 (CSV) 與 Session State 初始化
 LOG_FILE = "food_log.csv"
 
-# 載入個人資料
-if "profile" not in st.session_state:
-    if os.path.exists(PROFILE_FILE):
-        df_profile = pd.read_csv(PROFILE_FILE)
-        st.session_state.profile = df_profile.iloc[0].to_dict()
-    else:
-        st.session_state.profile = None
-
-# 載入飲食日誌
 if "food_logs" not in st.session_state:
     if os.path.exists(LOG_FILE):
         try:
-            st.session_state.food_logs = pd.read_csv(LOG_FILE).to_dict("records")
+            df = pd.read_csv(LOG_FILE)
+            st.session_state.food_logs = df.to_dict("records")
         except:
             st.session_state.food_logs = []
     else:
         st.session_state.food_logs = []
 
-# --- 邏輯：檢查是否已建檔 ---
-if st.session_state.profile is None:
-    st.title("🥗 歡迎使用 AI 智慧營養師")
-    st.subheader("請先建立您的個人健康檔案")
-    
-    with st.form("profile_form"):
-        age = st.number_input("年齡", 10, 100, 30)
-        height = st.number_input("身高 (cm)", 100.0, 220.0, 170.0)
-        weight = st.number_input("體重 (kg)", 30.0, 150.0, 65.0)
-        activity = st.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"])
-        medical = st.text_area("病史 / 飲食禁忌")
+# 初始化側欄基本資料的預設值
+if "user_age" not in st.session_state:
+    st.session_state.user_age = 30
+if "user_height" not in st.session_state:
+    st.session_state.user_height = 170.0
+if "user_weight" not in st.session_state:
+    st.session_state.user_weight = 65.0
+if "user_activity" not in st.session_state:
+    st.session_state.user_activity = "久坐少動"
+if "user_medical" not in st.session_state:
+    st.session_state.user_medical = ""
+
+# 4. 側邊欄：個人設定（使用 key 參數確保數值穩定保留）
+st.sidebar.header("個人基本資料")
+st.sidebar.slider("年齡", 10, 100, key="user_age")
+st.sidebar.number_input("身高 (cm)", 100.0, 220.0, key="user_height")
+st.sidebar.number_input("體重 (kg)", 30.0, 150.0, key="user_weight")
+st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"], key="user_activity")
+st.sidebar.text_area("病史 / 飲食禁忌", key="user_medical")
+
+# 5. 主畫面與拍照
+tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
+
+with tab1:
+    # 【第二階段新增】選擇餐別
+    meal_type = st.selectbox("選擇餐別", ["早餐", "午餐", "晚餐", "點心"])
+
+    camera_file = st.camera_input("拍攝你的餐點")
+    uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
+    image_to_process = camera_file or uploaded_file
+
+    if image_to_process:
+        image = Image.open(image_to_process)
+        image.thumbnail((800, 800))  # 嚴格壓縮圖片尺寸
+        if image.mode != 'RGB': 
+            image = image.convert('RGB')
         
-        if st.form_submit_button("儲存並開始使用"):
-            profile_data = {
-                "age": age, "height": height, "weight": weight, 
-                "activity": activity, "medical": medical
-            }
-            st.session_state.profile = profile_data
-            pd.DataFrame([profile_data]).to_csv(PROFILE_FILE, index=False)
-            st.rerun()
+        st.image(image, caption=f"已載入 {meal_type} 餐點圖片", use_container_width=True)
 
-else:
-    # --- 正式功能頁面 ---
-    st.title("🥗 AI 智慧營養與飲食記錄器")
-    st.sidebar.header("個人基本資料")
-    st.sidebar.write(f"年齡: {st.session_state.profile['age']}")
-    st.sidebar.write(f"身高: {st.session_state.profile['height']} cm")
-    st.sidebar.write(f"體重: {st.session_state.profile['weight']} kg")
-    
-    if st.sidebar.button("重新設定個人資料"):
-        st.session_state.profile = None
-        if os.path.exists(PROFILE_FILE): os.remove(PROFILE_FILE)
-        st.rerun()
-
-    tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
-
-    with tab1:
-        # 【第二階段新增】選擇餐別
-        meal_type = st.selectbox("選擇餐別", ["早餐", "午餐", "晚餐", "點心/其他"])
-        
-        camera_file = st.camera_input("拍攝你的餐點")
-        uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
-        image_to_process = camera_file or uploaded_file
-
-        if image_to_process:
-            image = Image.open(image_to_process)
-            image.thumbnail((800, 800))
-            if image.mode != 'RGB': 
-                image = image.convert('RGB')
-                
-            st.image(image, use_container_width=True)
-
-            if st.button("✨ 開始 AI 營養分析"):
-                with st.spinner("AI 正在分析營養素..."):
-                    model = genai.GenerativeModel("gemini-2.5-flash")
-                    # 【第二階段優化】精準要求回傳營養素結構
-                    prompt = (
-                        f"你是專業營養師。使用者背景：{st.session_state.profile}。"
-                        f"本次記錄餐別為：{meal_type}。"
-                        f"請分析此食物的名稱、份量、預估總熱量(大卡)，"
-                        f"以及蛋白質、澱粉(碳水化合物)、脂肪的大約克數(g)，並給予健康建議。"
-                    )
+        # 點擊按鈕進行分析
+        if st.button("✨ 開始 AI 營養分析"):
+            try:
+                model = genai.GenerativeModel("gemini-2.5-flash")
+                prompt = (
+                    f"你是專業營養師。這是一份【{meal_type}】的餐點。"
+                    f"使用者背景：年齡 {st.session_state.user_age} 歲、"
+                    f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
+                    f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
+                    f"請分析此食物的名稱、份量、預估熱量、以及三大營養素（蛋白質、碳水化合物/澱粉、脂肪）的大致克數，並給予專業建議。"
+                )
+                with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
                     st.session_state.last_analysis = response.text
-            
-            if "last_analysis" in st.session_state:
-                st.markdown("### 💡 分析結果")
-                st.markdown(st.session_state.last_analysis)
-                
-                if st.button("➕ 確認將此餐點加入紀錄"):
-                    new_log = {
-                        "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                        "餐別": meal_type,
-                        "體重": st.session_state.profile['weight'],
-                        "內容": st.session_state.last_analysis
-                    }
-                    st.session_state.food_logs.append(new_log)
-                    
-                    # 寫入 CSV 檔案
-                    df_to_save = pd.DataFrame(st.session_state.food_logs)
-                    df_to_save.to_csv(LOG_FILE, index=False)
-                    
-                    del st.session_state.last_analysis
-                    st.success("紀錄已成功永久保存！")
-                    st.rerun()
+                    st.session_state.last_meal_type = meal_type # 記錄當下的餐別
+            except Exception as e:
+                st.error(f"分析失敗: {e}")
 
-    with tab2:
-        st.subheader("我的飲食日誌")
-        
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if st.button("🗑️ 清空所有紀錄"):
-                st.session_state.food_logs = []
-                if os.path.exists(LOG_FILE): 
-                    os.remove(LOG_FILE)
+        # 當有分析結果時，顯示結果與「加入紀錄」按鈕
+        if "last_analysis" in st.session_state:
+            st.markdown(f"### 💡 【{st.session_state.get('last_meal_type', meal_type)}】分析結果")
+            st.markdown(st.session_state.last_analysis)
+            
+            if st.button("➕ 將此餐點加入紀錄"):
+                current_meal = st.session_state.get('last_meal_type', meal_type)
+                new_log = {
+                    "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                    "餐別": current_meal,
+                    "身高": st.session_state.user_height,
+                    "體重": st.session_state.user_weight,
+                    "病史": st.session_state.user_medical,
+                    "內容": st.session_state.last_analysis
+                }
+                st.session_state.food_logs.append(new_log)
+                
+                # 寫入 CSV 檔案
+                df_to_save = pd.DataFrame(st.session_state.food_logs)
+                df_to_save.to_csv(LOG_FILE, index=False)
+                
+                # 清除暫存並提示
+                del st.session_state.last_analysis
+                if "last_meal_type" in st.session_state:
+                    del st.session_state.last_meal_type
+                
+                st.success("紀錄已成功永久保存！")
                 st.rerun()
-                
-        if not st.session_state.food_logs:
-            st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
-        else:
-            for i, log in enumerate(reversed(st.session_state.food_logs)):
-                date_str = log.get("日期", f"紀錄 #{i+1}")
-                m_type = log.get("餐別", "餐點")
-                
-                with st.expander(f"📅 {date_str} 【{m_type}】"):
-                    st.markdown(log.get('內容', ''))
+
+with tab2:
+    st.subheader("我的飲食日誌")
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🗑️ 清空所有紀錄"):
+            st.session_state.food_logs = []
+            if os.path.exists(LOG_FILE): 
+                os.remove(LOG_FILE)
+            st.rerun()
+    
+    if not st.session_state.food_logs:
+        st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
+    else:
+        # 讓最新紀錄顯示在最上方
+        for i, log in enumerate(reversed(st.session_state.food_logs)):
+            date_str = log.get("日期", f"紀錄 #{i+1}")
+            m_type = log.get("餐別", "餐點")
+            
+            with st.expander(f"📅 {date_str} - 【{m_type}】 (體重: {log.get('體重', 'N/A')}kg)"):
+                st.markdown(log.get("內容", ""))
