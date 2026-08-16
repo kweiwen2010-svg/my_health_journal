@@ -28,7 +28,7 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 初始化側欄基本資料的 session_state 預設值
+# 初始化側欄基本資料的預設值（利用 key 機制讓 Streamlit 自動管理）
 if "user_age" not in st.session_state:
     st.session_state.user_age = 30
 if "user_height" not in st.session_state:
@@ -40,17 +40,13 @@ if "user_activity" not in st.session_state:
 if "user_medical" not in st.session_state:
     st.session_state.user_medical = ""
 
-# 4. 側邊欄：個人設定（綁定 session_state 確保不歸零）
+# 4. 側邊欄：個人設定（使用 key 參數確保數值穩定保留）
 st.sidebar.header("個人基本資料")
-st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, st.session_state.user_age)
-st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, st.session_state.user_height)
-st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, st.session_state.user_weight)
-st.session_state.user_activity = st.sidebar.selectbox(
-    "運動狀態", 
-    ["久坐少動", "輕度運動", "中度運動", "高度運動"], 
-    index=["久坐少動", "輕度運動", "中度運動", "高度運動"].index(st.session_state.user_activity)
-)
-st.session_state.user_medical = st.sidebar.text_area("病史 / 飲食禁忌", st.session_state.user_medical)
+st.sidebar.slider("年齡", 10, 100, key="user_age")
+st.sidebar.number_input("身高 (cm)", 100.0, 220.0, key="user_height")
+st.sidebar.number_input("體重 (kg)", 30.0, 150.0, key="user_weight")
+st.sidebar.selectbox("運動狀態", ["久坐少動", "輕度運動", "中度運動", "高度運動"], key="user_activity")
+st.sidebar.text_area("病史 / 飲食禁忌", key="user_medical")
 
 # 5. 主畫面與拍照
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
