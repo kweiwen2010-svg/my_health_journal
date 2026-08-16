@@ -15,9 +15,11 @@ if not api_key:
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 永久儲存設定 (CSV) 與 Session State 初始化
+# 3. 檔案儲存路徑設定
 LOG_FILE = "food_log.csv"
+PROFILE_FILE = "user_profile.csv"
 
+# 初始化飲食日誌
 if "food_logs" not in st.session_state:
     if os.path.exists(LOG_FILE):
         try:
@@ -28,31 +30,55 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 初始化所有互動元件的 session_state 預設值（只在第一次啟動時賦值）
-if "user_age" not in st.session_state:
-    st.session_state.user_age = 30
-if "user_height" not in st.session_state:
-    st.session_state.user_height = 170.0
-if "user_weight" not in st.session_state:
-    st.session_state.user_weight = 65.0
-if "user_activity" not in st.session_state:
-    st.session_state.user_activity = "久坐少動"
-if "user_medical" not in st.session_state:
-    st.session_state.user_medical = ""
-if "selected_meal_type" not in st.session_state:
-    st.session_state.selected_meal_type = "午餐"
+# 【升級關鍵】初始化個人資料：優先從 CSV 讀取，沒有的話才用預設值
+if "profile_loaded" not in st.session_state:
+    if os.path.exists(PROFILE_FILE):
+        try:
+            profile_df = pd.read_csv(PROFILE_FILE)
+            if not profile_df.empty:
+                row = profile_df.iloc[0]
+                st.session_state.user_age = int(row.get("年齡", 30))
+                st.session_state.user_height = float(row.get("身高", 170.0))
+                st.session_state.user_weight = float(row.get("體重", 65.0))
+                st.session_state.user_activity = str(row.get("運動狀態", "久坐少動"))
+                st.session_state.user_medical = str(row.get("病史", "")) if pd.notna(row.get("病史")) else ""
+        except:
+            pass
+    st.session_state.profile_loaded = True
 
-# 4. 側邊欄：個人設定（透過 value 參數直接綁定 session_state，徹底防止重置）
+# 若讀取後仍無數值，給予預設值
+if "user_age" not in st.session_state: st.session_state.user_age = 30
+if "user_height" not in st.session_state: st.session_state.user_height = 170.0
+if "user_weight" not in st.session_state: st.session_state.user_weight = 65.0
+if "user_activity" not in st.session_state: st.session_state.user_activity = "久坐少動"
+if "user_medical" not in st.session_state: st.session_state.user_medical = ""
+if "selected_meal_type" not in st.session_state: st.session_state.selected_meal_type = "午餐"
+
+def save_profile():
+    """將目前的個人資料寫入 CSV 永久保存"""
+    profile_data = [{
+        "年齡": st.session_state.user_age,
+        "身高": st.session_state.user_height,
+        "體重": st.session_state.user_weight,
+        "運動狀態": st.session_state.user_activity,
+        "病史": st.session_state.user_medical
+    }]
+    pd.DataFrame(profile_data).to_csv(PROFILE_FILE, index=False)
+
+# 4. 側邊欄：個人設定（每當數值改變時，自動呼叫 save_profile 存檔）
 st.sidebar.header("個人基本資料")
-st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age)
-st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height)
-st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, value=st.session_state.user_weight)
+st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age, on_change=save_profile)
+st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height, on_change=save_profile)
+st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, value=st.session_state.user_weight, on_change=save_profile)
 
 activity_list = ["久坐少動", "輕度運動", "中度運動", "高度運動"]
 current_act_idx = activity_list.index(st.session_state.user_activity) if st.session_state.user_activity in activity_list else 0
-st.session_state.user_activity = st.sidebar.selectbox("運動狀態", activity_list, index=current_act_idx)
+st.session_state.user_activity = st.sidebar.selectbox("運動狀態", activity_list, index=current_act_idx, on_change=save_profile)
 
 st.session_state.user_medical = st.sidebar.text_area("病史 / 飲食禁忌", value=st.session_state.user_medical)
+if st.sidebar.button("💾 儲存個人資料"):
+    save_profile()
+    st.sidebar.success("個人資料已永久儲存！")
 
 # 5. 主畫面與拍照
 tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
@@ -135,7 +161,6 @@ with tab2:
     if not st.session_state.food_logs:
         st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
     else:
-        # 讓最新紀錄顯示在最上方，並加入安全防護避免 nan
         for i, log in enumerate(reversed(st.session_state.food_logs)):
             date_str = log.get("日期", f"紀錄 #{i+1}")
             
