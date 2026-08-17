@@ -68,19 +68,22 @@ def save_profile():
     pd.DataFrame(profile_data).to_csv(PROFILE_FILE, index=False)
 
 def extract_nutrition_values(text):
-    """從 AI 回傳的文字中自動抓取熱量、蛋白質、碳水、脂肪的數值"""
+    """強化版：從 AI 回傳的文字中精準抓取營養素數值"""
     calories, protein, carbs, fat = 0.0, 0.0, 0.0, 0.0
     try:
-        # 使用正規表達式搜尋關鍵字周邊的數字
-        cal_match = re.search(r'熱量.*?(\d+(?:\.\d+)?)', text)
+        # 尋找熱量
+        cal_match = re.search(r'(?:熱量|卡路里).*?(\d+(?:\.\d+)?)', text)
         if cal_match: calories = float(cal_match.group(1))
         
+        # 尋找蛋白質
         pro_match = re.search(r'蛋白質.*?(\d+(?:\.\d+)?)', text)
         if pro_match: protein = float(pro_match.group(1))
         
-        carb_match = re.search(r'(?:碳水化合物|澱粉).*?(\d+(?:\.\d+)?)', text)
+        # 尋找碳水化合物或澱粉
+        carb_match = re.search(r'(?:碳水化合物|碳水|澱粉).*?(\d+(?:\.\d+)?)', text)
         if carb_match: carbs = float(carb_match.group(1))
         
+        # 尋找脂肪
         fat_match = re.search(r'脂肪.*?(\d+(?:\.\d+)?)', text)
         if fat_match: fat = float(fat_match.group(1))
     except:
@@ -131,7 +134,12 @@ with tab1:
                     f"使用者背景：年齡 {st.session_state.user_age} 歲、"
                     f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
                     f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
-                    f"請分析此食物的名稱、份量、預估熱量（請明確寫出例如：熱量: 500 大卡）、以及三大營養素克數（請明確寫出：蛋白質: 30g、碳水化合物: 50g、脂肪: 15g），並給予專業建議。"
+                    f"請分析此食物的名稱、份量，並且【必須】在回覆的最上方或顯眼處包含以下格式的精確數字總結：\n"
+                    f"- 熱量: [數字] 大卡\n"
+                    f"- 蛋白質: [數字] g\n"
+                    f"- 碳水化合物: [數字] g\n"
+                    f"- 脂肪: [數字] g\n"
+                    f"之後再給予詳細的專業營養建議。"
                 )
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
@@ -146,7 +154,6 @@ with tab1:
             st.markdown(st.session_state.last_analysis)
             
             if st.button("➕ 將此餐點加入紀錄"):
-                # 自動解析數值存入欄位供圖表使用
                 cal_val, pro_val, carb_val, fat_val = extract_nutrition_values(st.session_state.last_analysis)
                 
                 new_log = {
@@ -289,7 +296,7 @@ with tab4:
         st.markdown("### 🧬 每日三大營養素總計 (克 / g)")
         nutrients_daily = df_history.groupby('date_str')[['蛋白質', '碳水化合物', '脂肪']].sum().reset_index()
         nutrients_daily = nutrients_daily.set_index('date_str')
-        st.line_chart(nutrients_daily) # Streamlit 會自動以不同顏色區分多條線
+        st.line_chart(nutrients_daily)
         
         st.divider()
         
