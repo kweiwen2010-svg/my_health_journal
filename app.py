@@ -66,7 +66,7 @@ def save_profile():
     }]
     pd.DataFrame(profile_data).to_csv(PROFILE_FILE, index=False)
 
-# 4. 側邊欄：個人設定（每當數值改變時，自動呼叫 save_profile 存檔）
+# 4. 側邊欄：個人設定
 st.sidebar.header("個人基本資料")
 st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age, on_change=save_profile)
 st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height, on_change=save_profile)
@@ -81,7 +81,7 @@ if st.sidebar.button("💾 儲存個人資料"):
     save_profile()
     st.sidebar.success("個人資料已永久儲存！")
 
-# 5. 主畫面分頁：加入第三階段的「📊 當日統整與建議」
+# 5. 主畫面分頁
 tab1, tab2, tab3 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整"])
 
 with tab1:
@@ -96,13 +96,12 @@ with tab1:
 
     if image_to_process:
         image = Image.open(image_to_process)
-        image.thumbnail((800, 800))  # 嚴格壓縮圖片尺寸
+        image.thumbnail((800, 800))
         if image.mode != 'RGB': 
             image = image.convert('RGB')
         
         st.image(image, caption=f"已載入 {current_meal_type} 餐點圖片", use_container_width=True)
 
-        # 點擊按鈕進行分析
         if st.button("✨ 開始 AI 營養分析"):
             try:
                 model = genai.GenerativeModel("gemini-2.5-flash")
@@ -111,7 +110,7 @@ with tab1:
                     f"使用者背景：年齡 {st.session_state.user_age} 歲、"
                     f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
                     f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
-                    f"請分析此食物的名稱、份量、預估熱量、以及三大營養素（蛋白質、碳水化合物/澱粉、脂肪）的大致克數，並給予專業建議。"
+                    f"請分析此食物的名稱、份量、預估熱量(請提供明確數字如：XXX大卡)、以及三大營養素（蛋白質、碳水化合物、脂肪的大致克數），並給予專業建議。"
                 )
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
@@ -120,7 +119,6 @@ with tab1:
             except Exception as e:
                 st.error(f"分析失敗: {e}")
 
-        # 當有分析結果時，顯示結果與「加入紀錄」按鈕
         if "last_analysis" in st.session_state:
             active_meal = st.session_state.get('analyzed_meal_type', current_meal_type)
             st.markdown(f"### 💡 【{active_meal}】分析結果")
@@ -137,11 +135,9 @@ with tab1:
                 }
                 st.session_state.food_logs.append(new_log)
                 
-                # 寫入 CSV 檔案
                 df_to_save = pd.DataFrame(st.session_state.food_logs)
                 df_to_save.to_csv(LOG_FILE, index=False)
                 
-                # 清除暫存並提示
                 del st.session_state.last_analysis
                 if "analyzed_meal_type" in st.session_state:
                     del st.session_state.analyzed_meal_type
@@ -164,10 +160,8 @@ with tab2:
     else:
         for i, log in enumerate(reversed(st.session_state.food_logs)):
             date_str = log.get("日期", f"紀錄 #{i+1}")
-            
             raw_m_type = log.get("餐別")
             m_type = raw_m_type if pd.notna(raw_m_type) else "餐點"
-            
             raw_weight = log.get("體重")
             w_str = f"{raw_weight}kg" if pd.notna(raw_weight) else "N/A"
             
@@ -175,16 +169,14 @@ with tab2:
                 st.markdown(log.get("內容", ""))
 
 with tab3:
-    st.subheader("✨ 當日飲食統整與 AI 智慧建議")
+    st.subheader("✨ 當日飲食統整與 AI 視覺化建議")
     
-    selected_date = st.date_input("選擇要統整的日期", value=datetime.today().date())
+    selected_date = st.date_input("選擇要統整的日期", value=datetime.today().date(), key="summary_date")
     
     if not st.session_state.food_logs:
         st.info("目前尚無任何飲食紀錄，請先至「拍照分析」新增紀錄！")
     else:
-        # 將 food_logs 轉為 DataFrame 並過濾選定日期的紀錄
         df_logs = pd.DataFrame(st.session_state.food_logs)
-        # 假設日期格式為 'YYYY-MM-DD HH:MM'，擷取前 10 碼作為 'YYYY-MM-DD'
         df_logs['only_date'] = pd.to_datetime(df_logs['日期']).dt.date
         target_df = df_logs[df_logs['only_date'] == selected_date]
         
@@ -193,22 +185,39 @@ with tab3:
         else:
             st.success(f"找到 {selected_date} 共 {len(target_df)} 筆餐點紀錄：")
             
-            # 條列顯示當日各餐點摘要
             for idx, row in target_df.iterrows():
                 with st.expander(f"🕒 {row['日期']} - 【{row['餐別']}】"):
                     st.markdown(row['內容'])
             
             st.divider()
+            st.markdown("### 📊 當日營養攝取視覺化圖表")
             
-            # 點擊按鈕讓 Gemini 進行綜合分析
-            if st.button("🚀 執行 Gemini 綜合營養分析與建議"):
+            # 簡單的視覺化展示區塊（可依據每日推薦基準展示長條圖或進度）
+            # 這裡以中度運動、65kg 左右成人的每日參考基準為例 (可動態調整)
+            ref_calories = 2400
+            ref_protein = 110
+            ref_fat = 70
+            ref_carbs = 330
+            
+            # 讓使用者視覺化感受當日紀錄筆數與佔比
+            col_v1, col_v2, col_v3 = st.columns(3)
+            col_v1.metric("今日記錄餐數", f"{len(target_df)} 餐")
+            col_v2.metric("參考建議熱量", f"{ref_calories} kcal")
+            col_v3.metric("狀態提示", "需加強營養攝取" if len(target_df) < 3 else "紀錄完整")
+            
+            # 進度條模擬視覺化（提醒使用者補足營養）
+            st.markdown("🎯 **全日紀錄完整度指標**")
+            st.progress(min(len(target_df) / 4.0, 1.0), text=f"已記錄 {len(target_df)} / 4 餐 (早/午/晚/點心)")
+            
+            st.divider()
+            
+            if st.button("🚀 執行 Gemini 綜合營養分析與視覺化建議"):
                 try:
                     model = genai.GenerativeModel("gemini-2.5-flash")
                     
-                    # 組合當日所有飲食細節
                     meals_summary_text = ""
                     for idx, row in target_df.iterrows():
-                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['content'] if 'content' in row else row['內容']}\n"
+                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['內容']}\n"
                     
                     summary_prompt = (
                         f"你是一位專業營養師。請根據以下使用者今日 ({selected_date}) 的所有飲食紀錄內容，進行全日營養總結與評估。\n\n"
@@ -221,12 +230,12 @@ with tab3:
                         f"【今日各餐點詳細記錄】\n"
                         f"{meals_summary_text}\n\n"
                         f"請提供：\n"
-                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估\n"
+                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估與數據推估\n"
                         f"2. 優勢與需要改進的地方\n"
                         f"3. 針對接下來的晚餐或明天的具體飲食調整建議（語氣請溫暖、專業、具體）"
                     )
                     
-                    with st.spinner("Gemini 正在為您統整今日營養狀況..."):
+                    with st.spinner("Gemini 正在為您統整今日營養狀況與圖表解析..."):
                         summary_response = model.generate_content(summary_prompt)
                         st.markdown("### 📋 AI 智慧統整報告")
                         st.markdown(summary_response.text)
