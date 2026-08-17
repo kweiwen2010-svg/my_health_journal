@@ -81,7 +81,7 @@ if st.sidebar.button("💾 儲存個人資料"):
     save_profile()
     st.sidebar.success("個人資料已永久儲存！")
 
-# 5. 主畫面分頁：加入第四階段的「📈 歷史趨勢」
+# 5. 主畫面分頁
 tab1, tab2, tab3, tab4 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整", "📈 歷史趨勢"])
 
 with tab1:
@@ -235,32 +235,31 @@ with tab3:
                     st.error(f"統整分析失敗: {e}")
 
 with tab4:
-    st.subheader("📈 長期歷史趨勢與體重變化追蹤")
+    st.subheader("📈 長期歷史趨勢與每日總結追蹤")
     
     if not st.session_state.food_logs:
         st.info("目前尚無足夠的歷史資料可供繪製趨勢圖，快去記錄幾天看看吧！")
     else:
         df_history = pd.DataFrame(st.session_state.food_logs)
-        # 轉換日期格式
+        # 轉換日期格式並萃取出「天 (YYYY-MM-DD)」
         df_history['datetime'] = pd.to_datetime(df_history['日期'])
-        df_history['date'] = df_history['datetime'].dt.date
+        df_history['date_str'] = df_history['datetime'].dt.strftime('%Y-%m-%d')
         
-        # 1. 體重追蹤趨勢
-        st.markdown("### ⚖️ 記錄體重變化趨勢")
+        # 1. 每日平均體重趨勢（每日加總聚合）
+        st.markdown("### ⚖️ 每日體重變化趨勢")
         if '體重' in df_history.columns:
-            # 依據日期整理體重資料（取當天最後一筆或平均）
-            weight_df = df_history.groupby('date')['體重'].mean().reset_index()
-            weight_df = weight_df.set_index('date')
-            st.line_chart(weight_df, color="#ff4b4b")
+            weight_daily = df_history.groupby('date_str')['體重'].mean().reset_index()
+            weight_daily = weight_daily.set_index('date_str')
+            st.line_chart(weight_daily, color="#ff4b4b")
         else:
             st.info("目前尚無體重記錄數據。")
             
         st.divider()
         
-        # 2. 歷史紀錄筆數/頻率趨勢
-        st.markdown("### 📅 每日飲食記錄頻率趨勢")
-        daily_count = df_history.groupby('date').size().reset_index(name='記錄餐數')
-        daily_count = daily_count.set_index('date')
-        st.bar_chart(daily_count, color="#7c4dff")
+        # 2. 每日記錄餐數統計（每日加總聚合）
+        st.markdown("### 📅 每日飲食記錄餐數統整")
+        count_daily = df_history.groupby('date_str').size().reset_index(name='當日總記錄餐數')
+        count_daily = count_daily.set_index('date_str')
+        st.bar_chart(count_daily, color="#7c4dff")
         
-        st.markdown("*(小提示：隨著您累積更多天的早中晚完整飲食紀錄，長期趨勢圖表會越發豐富，幫助您全面掌握健康曲線！)*")
+        st.markdown("*(提示：此處已改為「每日加總 (Daily Aggregate)」，X 軸會以日期顯示您每天的體重平均與記錄頻率！)*")
