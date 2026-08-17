@@ -31,7 +31,7 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 【升級關鍵】初始化個人資料：優先從 CSV 讀取，沒有的話才用預設值
+# 初始化個人資料：優先從 CSV 讀取，沒有的話才用預設值
 if "profile_loaded" not in st.session_state:
     if os.path.exists(PROFILE_FILE):
         try:
@@ -81,8 +81,8 @@ if st.sidebar.button("💾 儲存個人資料"):
     save_profile()
     st.sidebar.success("個人資料已永久儲存！")
 
-# 5. 主畫面分頁
-tab1, tab2, tab3 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整"])
+# 5. 主畫面分頁：加入第四階段的「📈 歷史趨勢」
+tab1, tab2, tab3, tab4 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整", "📈 歷史趨勢"])
 
 with tab1:
     meal_list = ["早餐", "午餐", "晚餐", "點心"]
@@ -110,7 +110,7 @@ with tab1:
                     f"使用者背景：年齡 {st.session_state.user_age} 歲、"
                     f"身高 {st.session_state.user_height} cm、體重 {st.session_state.user_weight} kg、"
                     f"運動狀態：{st.session_state.user_activity}、病史/禁忌：「{st.session_state.user_medical}」。"
-                    f"請分析此食物的名稱、份量、預估熱量(請提供明確數字如：XXX大卡)、以及三大營養素（蛋白質、碳水化合物、脂肪的大致克數），並給予專業建議。"
+                    f"請分析此食物的名稱、份量、預估熱量、以及三大營養素（蛋白質、碳水化合物、脂肪的大致克數），並給予專業建議。"
                 )
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
@@ -190,22 +190,14 @@ with tab3:
                     st.markdown(row['內容'])
             
             st.divider()
-            st.markdown("### 📊 當日營養攝取視覺化圖表")
+            st.markdown("### 📊 當日營養攝取視覺化指標")
             
-            # 簡單的視覺化展示區塊（可依據每日推薦基準展示長條圖或進度）
-            # 這裡以中度運動、65kg 左右成人的每日參考基準為例 (可動態調整)
             ref_calories = 2400
-            ref_protein = 110
-            ref_fat = 70
-            ref_carbs = 330
-            
-            # 讓使用者視覺化感受當日紀錄筆數與佔比
             col_v1, col_v2, col_v3 = st.columns(3)
             col_v1.metric("今日記錄餐數", f"{len(target_df)} 餐")
             col_v2.metric("參考建議熱量", f"{ref_calories} kcal")
             col_v3.metric("狀態提示", "需加強營養攝取" if len(target_df) < 3 else "紀錄完整")
             
-            # 進度條模擬視覺化（提醒使用者補足營養）
             st.markdown("🎯 **全日紀錄完整度指標**")
             st.progress(min(len(target_df) / 4.0, 1.0), text=f"已記錄 {len(target_df)} / 4 餐 (早/午/晚/點心)")
             
@@ -241,3 +233,34 @@ with tab3:
                         st.markdown(summary_response.text)
                 except Exception as e:
                     st.error(f"統整分析失敗: {e}")
+
+with tab4:
+    st.subheader("📈 長期歷史趨勢與體重變化追蹤")
+    
+    if not st.session_state.food_logs:
+        st.info("目前尚無足夠的歷史資料可供繪製趨勢圖，快去記錄幾天看看吧！")
+    else:
+        df_history = pd.DataFrame(st.session_state.food_logs)
+        # 轉換日期格式
+        df_history['datetime'] = pd.to_datetime(df_history['日期'])
+        df_history['date'] = df_history['datetime'].dt.date
+        
+        # 1. 體重追蹤趨勢
+        st.markdown("### ⚖️ 記錄體重變化趨勢")
+        if '體重' in df_history.columns:
+            # 依據日期整理體重資料（取當天最後一筆或平均）
+            weight_df = df_history.groupby('date')['體重'].mean().reset_index()
+            weight_df = weight_df.set_index('date')
+            st.line_chart(weight_df, color="#ff4b4b")
+        else:
+            st.info("目前尚無體重記錄數據。")
+            
+        st.divider()
+        
+        # 2. 歷史紀錄筆數/頻率趨勢
+        st.markdown("### 📅 每日飲食記錄頻率趨勢")
+        daily_count = df_history.groupby('date').size().reset_index(name='記錄餐數')
+        daily_count = daily_count.set_index('date')
+        st.bar_chart(daily_count, color="#7c4dff")
+        
+        st.markdown("*(小提示：隨著您累積更多天的早中晚完整飲食紀錄，長期趨勢圖表會越發豐富，幫助您全面掌握健康曲線！)*")
