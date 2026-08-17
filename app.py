@@ -3,6 +3,7 @@ import google.generativeai as genai
 import pandas as pd
 import streamlit as st
 from PIL import Image
+from datetime import datetime
 
 # 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
@@ -80,8 +81,8 @@ if st.sidebar.button("💾 儲存個人資料"):
     save_profile()
     st.sidebar.success("個人資料已永久儲存！")
 
-# 5. 主畫面與拍照
-tab1, tab2 = st.tabs(["📸 拍照分析", "📊 飲食日誌"])
+# 5. 主畫面分頁：加入第三階段的「📊 當日統整與建議」
+tab1, tab2, tab3 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整"])
 
 with tab1:
     meal_list = ["早餐", "午餐", "晚餐", "點心"]
@@ -172,3 +173,62 @@ with tab2:
             
             with st.expander(f"📅 {date_str} - 【{m_type}】 (體重: {w_str})"):
                 st.markdown(log.get("內容", ""))
+
+with tab3:
+    st.subheader("✨ 當日飲食統整與 AI 智慧建議")
+    
+    selected_date = st.date_input("選擇要統整的日期", value=datetime.today().date())
+    
+    if not st.session_state.food_logs:
+        st.info("目前尚無任何飲食紀錄，請先至「拍照分析」新增紀錄！")
+    else:
+        # 將 food_logs 轉為 DataFrame 並過濾選定日期的紀錄
+        df_logs = pd.DataFrame(st.session_state.food_logs)
+        # 假設日期格式為 'YYYY-MM-DD HH:MM'，擷取前 10 碼作為 'YYYY-MM-DD'
+        df_logs['only_date'] = pd.to_datetime(df_logs['日期']).dt.date
+        target_df = df_logs[df_logs['only_date'] == selected_date]
+        
+        if target_df.empty:
+            st.warning(f"📅 找不到 {selected_date} 的飲食紀錄。")
+        else:
+            st.success(f"找到 {selected_date} 共 {len(target_df)} 筆餐點紀錄：")
+            
+            # 條列顯示當日各餐點摘要
+            for idx, row in target_df.iterrows():
+                with st.expander(f"🕒 {row['日期']} - 【{row['餐別']}】"):
+                    st.markdown(row['內容'])
+            
+            st.divider()
+            
+            # 點擊按鈕讓 Gemini 進行綜合分析
+            if st.button("🚀 執行 Gemini 綜合營養分析與建議"):
+                try:
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    
+                    # 組合當日所有飲食細節
+                    meals_summary_text = ""
+                    for idx, row in target_df.iterrows():
+                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['content'] if 'content' in row else row['內容']}\n"
+                    
+                    summary_prompt = (
+                        f"你是一位專業營養師。請根據以下使用者今日 ({selected_date}) 的所有飲食紀錄內容，進行全日營養總結與評估。\n\n"
+                        f"【使用者個人背景】\n"
+                        f"- 年齡: {st.session_state.user_age} 歲\n"
+                        f"- 身高: {st.session_state.user_height} cm\n"
+                        f"- 體重: {st.session_state.user_weight} kg\n"
+                        f"- 運動狀態: {st.session_state.user_activity}\n"
+                        f"- 病史/禁忌: {st.session_state.user_medical}\n\n"
+                        f"【今日各餐點詳細記錄】\n"
+                        f"{meals_summary_text}\n\n"
+                        f"請提供：\n"
+                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估\n"
+                        f"2. 優勢與需要改進的地方\n"
+                        f"3. 針對接下來的晚餐或明天的具體飲食調整建議（語氣請溫暖、專業、具體）"
+                    )
+                    
+                    with st.spinner("Gemini 正在為您統整今日營養狀況..."):
+                        summary_response = model.generate_content(summary_prompt)
+                        st.markdown("### 📋 AI 智慧統整報告")
+                        st.markdown(summary_response.text)
+                except Exception as e:
+                    st.error(f"統整分析失敗: {e}")
