@@ -28,12 +28,15 @@ def init_gspread():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
-    json_files = [f for f in os.listdir(".") if f.endswith(".json") and "health-" in f]
-    if not json_files:
-        st.error("❌ 找不到 Google Service Account JSON 憑證檔案！")
-        st.stop()
     
-    creds = ServiceAccountCredentials.from_json_keyfile_name(json_files[0], scope)
+    # 直接從 Streamlit Secrets 讀取憑證，不用去硬碟找 .json 檔
+    if "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        st.error("❌ 找不到 Streamlit Secrets 中的 [gcp_service_account] 設定！")
+        st.stop()
+        
     client = gspread.authorize(creds)
     return client
 
