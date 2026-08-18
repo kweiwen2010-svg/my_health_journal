@@ -1,11 +1,10 @@
-import json
 import streamlit as st
-from oauth2client.service_account import ServiceAccountCredentials
-import gspread
 import google.generativeai as genai
 from datetime import datetime
 import pandas as pd
 from PIL import Image
+import gspread
+from google.oauth2.service_account import Credentials
 
 # 1. 頁面基本設定
 st.set_page_config(
@@ -22,23 +21,25 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. Google 試算表連線設定（使用雲端 Secrets 的 JSON 憑證）
+# 3. Google 試算表連線設定（使用最穩定的服務帳戶檔案或雲端共用唯讀/編輯）
 @st.cache_resource
 def init_gspread():
     try:
-        # 從 Streamlit Secrets 讀取完整的 JSON 憑證字串並轉成字典
-        creds_json_str = st.secrets["GOOGLE_SHEETS_CREDENTIALS"]
-        creds_dict = json.loads(creds_json_str)
-        
         scope = [
-            "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        
+        # 雲端部署時，若無本地 credentials.json 檔案，會自動改為快取暫存或提示
+        # 請確保你有將 credentials.json 一併上傳至 GitHub，或是直接使用以下安全讀取方式
+        import os
+        if os.path.exists("credentials.json"):
+            client = gspread.service_account(filename="credentials.json")
+        else:
+            # 如果是在雲端且沒有檔案，提供明確指引
+            st.error("❌ 雲端缺少 credentials.json 檔案。請確保已將該檔案上傳至 GitHub 專案根目錄。")
+            st.stop()
+            
         sheet_url = st.secrets.get("GOOGLE_SHEETS_URL")
         if not sheet_url:
             st.error("❌ 找不到 GOOGLE_SHEETS_URL！請檢查 Streamlit Secrets 設定。")
@@ -53,10 +54,8 @@ def init_gspread():
 # 取得試算表與工作表
 try:
     db = init_gspread()
-    # 預設選取第一個工作表，若名稱不同可自行修改如 db.worksheet("工作表1")
     sheet = db.get_worksheet(0) 
 except Exception as e:
-    st.error(f"無法載入 Google 試算表工作表: {e}")
     st.stop()
 
 # 4. 介面標題
@@ -83,7 +82,6 @@ with tab1:
         else:
             with st.spinner("AI 正在分析營養成分中，請稍候..."):
                 try:
-                    # 呼叫 Gemini Vision 模型進行分析
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     
                     prompt = (
@@ -104,7 +102,7 @@ with tab1:
                         
                     response = model.generate_content(contents)
                     
-                    # 清理並解析 Gemini 回傳的 JSON
+                    import json
                     result_text = response.text.strip()
                     if result_text.startswith("```json"):
                         result_text = result_text[7:-3].strip()
@@ -113,7 +111,6 @@ with tab1:
                         
                     nutrition_data = json.loads(result_text)
                     
-                    # 顯示分析結果
                     st.success("✅ 分析成功！")
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("🔥 熱量", f"{nutrition_data.get('calories', 0)} kcal")
@@ -123,7 +120,6 @@ with tab1:
                     
                     st.info(f"💡 **營養師建議**：{nutrition_data.get('advice', '無')}")
                     
-                    # 寫入 Google 試算表
                     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     row_data = [
                         now_time,
