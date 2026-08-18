@@ -3,6 +3,8 @@ import google.generativeai as genai
 from datetime import datetime
 import pandas as pd
 from PIL import Image
+import gspread
+from google.oauth2.service_account import Credentials
 import json
 
 # 1. 頁面基本設定
@@ -12,7 +14,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# 2. 初始化 Gemini API (只需要這個金鑰即可)
+# 2. 初始化 Gemini API
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
     st.error("❌ 找不到 GEMINI_API_KEY！請檢查 Streamlit Secrets 設定。")
@@ -20,16 +22,48 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 3. 簡化版儲存機制：改用 Streamlit 本地暫存與模擬試算表（或直接顯示紀錄）
-# 這樣完全不需要設定複雜的 Google 憑證，保證 100% 成功執行！
-if 'records' not in st.session_state:
-    st.session_state['records'] = []
+# 3. Google 試算表連線設定
+@st.cache_resource
+def init_gspread():
+    try:
+        creds_json_str = st.secrets["GOOGLE_SHEETS_CREDENTIALS"]
+        if isinstance(creds_json_str, str):
+            creds_dict = json.loads(creds_json_str)
+        else:
+            creds_dict = creds_json_str
+            
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        
+        sheet_url = st.secrets.get("GOOGLE_SHEETS_URL")
+        if not sheet_url:
+            st.error("❌ 找不到 GOOGLE_SHEETS_URL！請檢查 Streamlit Secrets 設定。")
+            st.stop()
+            
+        spreadsheet = client.open_by_url(sheet_url)
+        return spreadsheet
+    except Exception as e:
+        st.error(f"❌ Google 試算表連線失敗: {e}")
+        st.stop()
 
-# 4. 介面標題與說明
+# 取得試算表與第一個工作表
+try:
+    db = init_gspread()
+    sheet = db.get_worksheet(0) 
+except Exception as e:
+    st.stop()
+
+# 4. 介面標題
 st.title("🥗 AI 智慧營養與飲食記錄器")
-st.markdown("隨時隨地拍照或記錄你的飲食，讓 AI 為你分析營養並記錄！")
+st.markdown("隨時隨地拍照或記錄你的飲食，讓 AI 為你分析營養並安全儲存！")
 
-# 5. 分頁介面
+# 5. 使用者輸入介面
 tab1, tab2 = st.tabs(["📸 拍照/上傳記錄", "📊 查看歷史紀錄"])
 
 with tab1:
@@ -42,7 +76,8 @@ with tab1:
     image = None
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
-        st.image(image, caption="已上傳的食物照片", use_column_width=True)
+        # 僅將舊參數改為新版相容寫法，確保不報錯
+        st.image(image, caption="已上傳的食物照片", use_container_width=True)
     
     if st.button("🚀 開始 AI 營養分析與記錄", type="primary"):
         if uploaded_file is None and not user_note:
@@ -53,7 +88,7 @@ with tab1:
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     
                     prompt = (
-                        "請扮演專業營養師。分析以下食物照片與備註，並嚴格以 JSON 格式回傳以下欄位，不要包覆額外多餘文字："
+                        "請扮演專業營養師。分析以下食物照片與備註，並嚴格以 JSON 格式回傳以下欄位："
                         "{\"food_name\": \"食物名稱\", "
                         "\"calories\": 估算卡路里數字(整數), "
                         "\"protein\": 蛋白質克數(數字), "
@@ -87,28 +122,34 @@ with tab1:
                     
                     st.info(f"💡 **營養師建議**：{nutrition_data.get('advice', '無')}")
                     
-                    # 儲存至暫存紀錄
                     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    row_data = {
-                        "時間": now_time,
-                        "類型": meal_type,
-                        "食物名稱": nutrition_data.get('food_name', '未知食物'),
-                        "熱量 (kcal)": nutrition_data.get('calories', 0),
-                        "蛋白質 (g)": nutrition_data.get('protein', 0),
-                        "脂肪 (g)": nutrition_data.get('fat', 0),
-                        "碳水 (g)": nutrition_data.get('carbs', 0),
-                        "備註": user_note
-                    }
-                    st.session_state['records'].append(row_data)
-                    st.success("💾 紀錄已成功儲存！")
+                    row_data = [
+                        now_time,
+                        meal_type,
+                        nutrition_data.get('food_name', '未知食物'),
+                        nutrition_data.get('calories', 0),
+                        nutrition_data.get('protein', 0),
+                        nutrition_data.get('fat', 0),
+                        nutrition_data.get('carbs', 0),
+                        user_note
+                    ]
+                    sheet.append_row(row_data)
+                    st.success("💾 紀錄已成功自動儲存至 Google 試算表！")
                     
                 except Exception as e:
-                    st.error(f"❌ 分析過程發生錯誤: {e}")
+                    st.error(f"❌ 分析或儲存過程發生錯誤: {e}")
 
 with tab2:
     st.subheader("📜 歷史飲食紀錄")
-    if st.session_state['records']:
-        df = pd.DataFrame(st.session_state['records'])
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("目前尚無任何紀錄，快去新增一筆吧！")
+    if st.button("🔄 重新載入資料"):
+        st.rerun()
+        
+    try:
+        data = sheet.get_all_records()
+        if data:
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("目前尚無任何紀錄，快去新增一筆吧！")
+    except Exception as e:
+        st.error(f"無法讀取歷史紀錄: {e}")
