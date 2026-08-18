@@ -6,22 +6,22 @@ from PIL import Image
 from datetime import datetime
 import re
 
-# 1. 頁面設定 (保持不變)
+# 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
 st.title("🥗 AI 智慧營養與飲食記錄器")
 
-# 2. 自動載入 API Key (保持不變)
+# 2. 自動載入 API Key
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 if not api_key:
     st.error("❌ 找不到 Gemini API Key！請檢查 Streamlit Secrets 設定。")
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 檔案儲存路徑 (保持不變)
+# 3. 檔案儲存路徑
 LOG_FILE = "food_log.csv"
 PROFILE_FILE = "user_profile.csv"
 
-# 初始化飲食日誌 (保持不變)
+# 初始化飲食日誌
 if "food_logs" not in st.session_state:
     if os.path.exists(LOG_FILE):
         try:
@@ -32,7 +32,7 @@ if "food_logs" not in st.session_state:
     else:
         st.session_state.food_logs = []
 
-# 初始化個人資料 (保持不變)
+# 初始化個人資料
 if "profile_loaded" not in st.session_state:
     if os.path.exists(PROFILE_FILE):
         try:
@@ -48,7 +48,7 @@ if "profile_loaded" not in st.session_state:
             pass
     st.session_state.profile_loaded = True
 
-# 預設值 (保持不變)
+# 預設值
 if "user_age" not in st.session_state: st.session_state.user_age = 30
 if "user_height" not in st.session_state: st.session_state.user_height = 170.0
 if "user_weight" not in st.session_state: st.session_state.user_weight = 65.0
@@ -78,7 +78,7 @@ def extract_nutrition_values(text):
     if fat_match: fat = float(fat_match.group(1))
     return calories, protein, carbs, fat
 
-# 側邊欄 (完全恢復原樣)
+# 側邊欄
 st.sidebar.header("個人基本資料")
 st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age, on_change=save_profile)
 st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height, on_change=save_profile)
@@ -101,9 +101,8 @@ with tab1:
     camera_file = st.camera_input("拍攝你的餐點")
     uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
     
-    # --- 【新增部分：僅在此處加入說明框】 ---
+    # 保留你想要的補充說明框
     supplement_text = st.text_area("💡 補充說明 (例如：分食比例、飯後水果等)", placeholder="輸入未拍攝到的食物或分食份量...")
-    # --------------------------------------
 
     image_to_process = camera_file or uploaded_file
 
@@ -116,15 +115,13 @@ with tab1:
         if st.button("✨ 開始 AI 營養分析"):
             try:
                 model = genai.GenerativeModel("gemini-2.5-flash")
-                # --- 【新增部分：在 Prompt 加入說明資訊】 ---
                 prompt = (
                     f"你是專業營養師。這是一份【{current_meal_type}】的餐點。\n"
-                    f"使用者補充資訊：{supplement_text}\n" # 加入這行
+                    f"使用者補充資訊：{supplement_text}\n"
                     f"請分析此食物，若補充資訊提到分食請折算，提到水果等請一併加總。\n"
                     f"務必包含以下格式總結：\n"
                     f"- 熱量: [數字] 大卡\n- 蛋白質: [數字] g\n- 碳水化合物: [數字] g\n- 脂肪: [數字] g\n"
                 )
-                # ----------------------------------------
                 with st.spinner("AI 正在分析..."):
                     response = model.generate_content([image, prompt])
                     st.session_state.last_analysis = response.text
@@ -151,29 +148,104 @@ with tab1:
                 st.success("紀錄已存入！")
                 st.rerun()
 
-# [其餘 Tab2, Tab3, Tab4 保持你之前的版本邏輯完全不變]
 with tab2:
     st.subheader("我的飲食日誌")
     if st.button("🗑️ 清空所有紀錄"):
         st.session_state.food_logs = []
         if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
         st.rerun()
-    for log in reversed(st.session_state.food_logs):
-        with st.expander(f"📅 {log.get('日期')} - 【{log.get('餐別')}】"):
-            st.markdown(log.get("內容", ""))
+    if not st.session_state.food_logs:
+        st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
+    else:
+        for i, log in enumerate(reversed(st.session_state.food_logs)):
+            date_str = log.get("日期", f"紀錄 #{i+1}")
+            m_type = log.get("餐別", "餐點")
+            w_str = f"{log.get('體重')}kg" if pd.notna(log.get("體重")) else "N/A"
+            with st.expander(f"📅 {date_str} - 【{m_type}】 (體重: {w_str})"):
+                st.markdown(log.get("內容", ""))
 
 with tab3:
-    st.subheader("✨ 當日飲食統整")
-    selected_date = st.date_input("選擇日期", value=datetime.today().date())
-    df = pd.DataFrame(st.session_state.food_logs)
-    if not df.empty:
-        df['only_date'] = pd.to_datetime(df['日期']).dt.date
-        target = df[df['only_date'] == selected_date]
-        st.write(f"今日共 {len(target)} 筆紀錄")
+    st.subheader("✨ 當日飲食統整與 AI 視覺化建議")
+    selected_date = st.date_input("選擇要統整的日期", value=datetime.today().date(), key="summary_date")
+    
+    if not st.session_state.food_logs:
+        st.info("目前尚無任何飲食紀錄，請先至「拍照分析」新增紀錄！")
+    else:
+        df_logs = pd.DataFrame(st.session_state.food_logs)
+        df_logs['only_date'] = pd.to_datetime(df_logs['日期']).dt.date
+        target_df = df_logs[df_logs['only_date'] == selected_date]
+        
+        if target_df.empty:
+            st.warning(f"📅 找不到 {selected_date} 的飲食紀錄。")
+        else:
+            st.success(f"找到 {selected_date} 共 {len(target_df)} 筆餐點紀錄：")
+            for idx, row in target_df.iterrows():
+                with st.expander(f"🕒 {row['日期']} - 【{row['餐別']}】"):
+                    st.markdown(row['內容'])
+            
+            st.divider()
+            st.markdown("### 📊 當日營養攝取視覺化指標")
+            ref_calories = 2400
+            col_v1, col_v2, col_v3 = st.columns(3)
+            col_v1.metric("今日記錄餐數", f"{len(target_df)} 餐")
+            col_v2.metric("參考建議熱量", f"{ref_calories} kcal")
+            col_v3.metric("狀態提示", "需加強營養攝取" if len(target_df) < 3 else "紀錄完整")
+            
+            st.markdown("🎯 **全日紀錄完整度指標**")
+            st.progress(min(len(target_df) / 4.0, 1.0), text=f"已記錄 {len(target_df)} / 4 餐 (早/午/晚/點心)")
+            st.divider()
+            
+            if st.button("🚀 執行 Gemini 綜合營養分析與視覺化建議"):
+                try:
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    meals_summary_text = ""
+                    for idx, row in target_df.iterrows():
+                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['內容']}\n"
+                    
+                    summary_prompt = (
+                        f"你是一位專業營養師。請根據以下使用者今日 ({selected_date}) 的所有飲食紀錄內容，進行全日營養總結與評估。\n\n"
+                        f"【使用者個人背景】\n"
+                        f"- 年齡: {st.session_state.user_age} 歲\n"
+                        f"- 身高: {st.session_state.user_height} cm\n"
+                        f"- 體重: {st.session_state.user_weight} kg\n"
+                        f"- 運動狀態: {st.session_state.user_activity}\n"
+                        f"- 病史/禁忌: {st.session_state.user_medical}\n\n"
+                        f"【今日各餐點詳細記錄】\n"
+                        f"{meals_summary_text}\n\n"
+                        f"請提供：\n"
+                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估與數據推估\n"
+                        f"2. 優勢與需要改進的地方\n"
+                        f"3. 針對接下來的晚餐或明天的具體飲食調整建議（語氣請溫暖、專業、具體）"
+                    )
+                    with st.spinner("Gemini 正在為您統整今日營養狀況與圖表解析..."):
+                        summary_response = model.generate_content(summary_prompt)
+                        st.markdown("### 📋 AI 智慧統整報告")
+                        st.markdown(summary_response.text)
+                except Exception as e:
+                    st.error(f"統整分析失敗: {e}")
 
 with tab4:
-    st.subheader("📈 長期歷史趨勢")
-    if st.session_state.food_logs:
-        df = pd.DataFrame(st.session_state.food_logs)
-        df['date_str'] = pd.to_datetime(df['日期']).dt.strftime('%Y-%m-%d')
-        st.line_chart(df.groupby('date_str')[['熱量', '蛋白質', '碳水化合物', '脂肪']].sum())
+    st.subheader("📈 長期歷史趨勢與每日營養加總追蹤")
+    if not st.session_state.food_logs:
+        st.info("目前尚無足夠的歷史資料可供繪製趨勢圖，快去記錄幾天看看吧！")
+    else:
+        df_history = pd.DataFrame(st.session_state.food_logs)
+        df_history['datetime'] = pd.to_datetime(df_history['日期'])
+        df_history['date_str'] = df_history['datetime'].dt.strftime('%Y-%m-%d')
+        for col in ['熱量', '蛋白質', '碳水化合物', '脂肪', '體重']:
+            if col not in df_history.columns:
+                df_history[col] = 0.0
+
+        st.markdown("### 🔥 每日熱量攝取總計 (kcal)")
+        cal_daily = df_history.groupby('date_str')['熱量'].sum().reset_index().set_index('date_str')
+        st.line_chart(cal_daily, color="#ff7043")
+        st.divider()
+        
+        st.markdown("### 🧬 每日三大營養素總計 (克 / g)")
+        nutrients_daily = df_history.groupby('date_str')[['蛋白質', '碳水化合物', '脂肪']].sum().reset_index().set_index('date_str')
+        st.line_chart(nutrients_daily)
+        st.divider()
+        
+        st.markdown("### ⚖️ 每日體重變化趨勢 (kg)")
+        weight_daily = df_history.groupby('date_str')['體重'].mean().reset_index().set_index('date_str')
+        st.line_chart(weight_daily, color="#29b6f6")
