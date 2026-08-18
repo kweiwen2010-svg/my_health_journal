@@ -5,10 +5,12 @@ import streamlit as st
 from PIL import Image
 from datetime import datetime
 import re
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
-st.title("🥗 AI 智慧營養與飲食記錄器")
+st.title("🥗 AI 智慧營養與飲食記錄器 (雲端同步版)")
 
 # 2. 自動載入 API Key
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -17,54 +19,61 @@ if not api_key:
     st.stop()
 genai.configure(api_key=api_key)
 
-# 3. 檔案儲存路徑
-LOG_FILE = "food_log.csv"
-PROFILE_FILE = "user_profile.csv"
+# 3. Google Sheets 雲端連線設定
+SHEET_NAME = "health"  # 對應你建立的 Google 試算表名稱
 
-# 初始化飲食日誌
+@st.cache_resource
+def init_gspread():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    # 讀取當前資料夾下的 json 憑證檔案
+    json_files = [f for f in os.listdir(".") if f.endswith(".json") and "health-" in f]
+    if not json_files:
+        st.error("❌ 找不到 Google Service Account JSON 憑證檔案！")
+        st.stop()
+    
+    creds = ServiceAccountCredentials.from_json_keyfile_name(json_files[0], scope)
+    client = gspread.authorize(creds)
+    return client
+
+try:
+    gc = init_gspread()
+    sheet = gc.open(SHEET_NAME).sheet1
+except Exception as e:
+    st.error(f"❌ Google Sheets 連線失敗，請檢查共用設定或檔名是否正確：{e}")
+    st.stop()
+
+# 初始化飲食日誌 (從 Google Sheets 載入)
 if "food_logs" not in st.session_state:
-    if os.path.exists(LOG_FILE):
-        try:
-            df = pd.read_csv(LOG_FILE)
-            st.session_state.food_logs = df.to_dict("records")
-        except:
-            st.session_state.food_logs = []
-    else:
+    try:
+        data = sheet.get_all_records()
+        st.session_state.food_logs = data if data else []
+    except Exception:
         st.session_state.food_logs = []
 
-# 初始化個人資料
-if "profile_loaded" not in st.session_state:
-    if os.path.exists(PROFILE_FILE):
-        try:
-            profile_df = pd.read_csv(PROFILE_FILE)
-            if not profile_df.empty:
-                row = profile_df.iloc[0]
-                st.session_state.user_age = int(row.get("年齡", 30))
-                st.session_state.user_height = float(row.get("身高", 170.0))
-                st.session_state.user_weight = float(row.get("體重", 65.0))
-                st.session_state.user_activity = str(row.get("運動狀態", "久坐少動"))
-                st.session_state.user_medical = str(row.get("病史", "")) if pd.notna(row.get("病史")) else ""
-        except:
-            pass
-    st.session_state.profile_loaded = True
+def save_logs_to_cloud():
+    """將目前的 food_logs 同步寫回 Google Sheets"""
+    try:
+        sheet.clear()
+        if st.session_state.food_logs:
+            df_temp = pd.DataFrame(st.session_state.food_logs)
+            # 寫入標題與資料
+            sheet.update([df_temp.columns.values.tolist()] + df_temp.values.tolist())
+        else:
+            # 若為空則保留表頭
+            sheet.update([["日期", "餐別", "身高", "體重", "病史", "內容", "熱量", "蛋白質", "碳水化合物", "脂肪"]])
+    except Exception as e:
+        st.warning(f"⚠️ 雲端同步失敗: {e}")
 
-# 預設值
+# 初始化個人資料預設值
 if "user_age" not in st.session_state: st.session_state.user_age = 30
 if "user_height" not in st.session_state: st.session_state.user_height = 170.0
 if "user_weight" not in st.session_state: st.session_state.user_weight = 65.0
 if "user_activity" not in st.session_state: st.session_state.user_activity = "久坐少動"
 if "user_medical" not in st.session_state: st.session_state.user_medical = ""
 if "selected_meal_type" not in st.session_state: st.session_state.selected_meal_type = "午餐"
-
-def save_profile():
-    profile_data = [{
-        "年齡": st.session_state.user_age,
-        "身高": st.session_state.user_height,
-        "體重": st.session_state.user_weight,
-        "運動狀態": st.session_state.user_activity,
-        "病史": st.session_state.user_medical
-    }]
-    pd.DataFrame(profile_data).to_csv(PROFILE_FILE, index=False)
 
 def extract_nutrition_values(text):
     calories, protein, carbs, fat = 0.0, 0.0, 0.0, 0.0
@@ -80,15 +89,12 @@ def extract_nutrition_values(text):
 
 # 側邊欄
 st.sidebar.header("個人基本資料")
-st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age, on_change=save_profile)
-st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height, on_change=save_profile)
-st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, value=st.session_state.user_weight, on_change=save_profile)
+st.session_state.user_age = st.sidebar.slider("年齡", 10, 100, value=st.session_state.user_age)
+st.session_state.user_height = st.sidebar.number_input("身高 (cm)", 100.0, 220.0, value=st.session_state.user_height)
+st.session_state.user_weight = st.sidebar.number_input("體重 (kg)", 30.0, 150.0, value=st.session_state.user_weight)
 activity_list = ["久坐少動", "輕度運動", "中度運動", "高度運動"]
-st.session_state.user_activity = st.sidebar.selectbox("運動狀態", activity_list, index=activity_list.index(st.session_state.user_activity) if st.session_state.user_activity in activity_list else 0, on_change=save_profile)
+st.session_state.user_activity = st.sidebar.selectbox("運動狀態", activity_list, index=activity_list.index(st.session_state.user_activity) if st.session_state.user_activity in activity_list else 0)
 st.session_state.user_medical = st.sidebar.text_area("病史 / 飲食禁忌", value=st.session_state.user_medical)
-if st.sidebar.button("💾 儲存個人資料"):
-    save_profile()
-    st.sidebar.success("個人資料已永久儲存！")
 
 # 主畫面分頁
 tab1, tab2, tab3, tab4 = st.tabs(["📸 拍照分析", "📊 飲食日誌", "✨ AI 智慧統整", "📈 歷史趨勢"])
@@ -101,7 +107,6 @@ with tab1:
     camera_file = st.camera_input("拍攝你的餐點")
     uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
     
-    # 保留你想要的補充說明框
     supplement_text = st.text_area("💡 補充說明 (例如：分食比例、飯後水果等)", placeholder="輸入未拍攝到的食物或分食份量...")
 
     image_to_process = camera_file or uploaded_file
@@ -144,15 +149,15 @@ with tab1:
                     "熱量": cal, "蛋白質": pro, "碳水化合物": carb, "脂肪": fat
                 }
                 st.session_state.food_logs.append(new_log)
-                pd.DataFrame(st.session_state.food_logs).to_csv(LOG_FILE, index=False)
-                st.success("紀錄已存入！")
+                save_logs_to_cloud()  # 同步寫入 Google Sheets
+                st.success("紀錄已成功同步至雲端！")
                 st.rerun()
 
 with tab2:
     st.subheader("我的飲食日誌")
     if st.button("🗑️ 清空所有紀錄"):
         st.session_state.food_logs = []
-        if os.path.exists(LOG_FILE): os.remove(LOG_FILE)
+        save_logs_to_cloud()
         st.rerun()
     if not st.session_state.food_logs:
         st.info("目前尚無任何飲食紀錄，快去拍照上傳開始記錄吧！")
@@ -178,51 +183,7 @@ with tab3:
         if target_df.empty:
             st.warning(f"📅 找不到 {selected_date} 的飲食紀錄。")
         else:
-            st.success(f"找到 {selected_date} 共 {len(target_df)} 筆餐點紀錄：")
-            for idx, row in target_df.iterrows():
-                with st.expander(f"🕒 {row['日期']} - 【{row['餐別']}】"):
-                    st.markdown(row['內容'])
-            
-            st.divider()
-            st.markdown("### 📊 當日營養攝取視覺化指標")
-            ref_calories = 2400
-            col_v1, col_v2, col_v3 = st.columns(3)
-            col_v1.metric("今日記錄餐數", f"{len(target_df)} 餐")
-            col_v2.metric("參考建議熱量", f"{ref_calories} kcal")
-            col_v3.metric("狀態提示", "需加強營養攝取" if len(target_df) < 3 else "紀錄完整")
-            
-            st.markdown("🎯 **全日紀錄完整度指標**")
-            st.progress(min(len(target_df) / 4.0, 1.0), text=f"已記錄 {len(target_df)} / 4 餐 (早/午/晚/點心)")
-            st.divider()
-            
-            if st.button("🚀 執行 Gemini 綜合營養分析與視覺化建議"):
-                try:
-                    model = genai.GenerativeModel("gemini-2.5-flash")
-                    meals_summary_text = ""
-                    for idx, row in target_df.iterrows():
-                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['內容']}\n"
-                    
-                    summary_prompt = (
-                        f"你是一位專業營養師。請根據以下使用者今日 ({selected_date}) 的所有飲食紀錄內容，進行全日營養總結與評估。\n\n"
-                        f"【使用者個人背景】\n"
-                        f"- 年齡: {st.session_state.user_age} 歲\n"
-                        f"- 身高: {st.session_state.user_height} cm\n"
-                        f"- 體重: {st.session_state.user_weight} kg\n"
-                        f"- 運動狀態: {st.session_state.user_activity}\n"
-                        f"- 病史/禁忌: {st.session_state.user_medical}\n\n"
-                        f"【今日各餐點詳細記錄】\n"
-                        f"{meals_summary_text}\n\n"
-                        f"請提供：\n"
-                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估與數據推估\n"
-                        f"2. 優勢與需要改進的地方\n"
-                        f"3. 針對接下來的晚餐或明天的具體飲食調整建議（語氣請溫暖、專業、具體）"
-                    )
-                    with st.spinner("Gemini 正在為您統整今日營養狀況與圖表解析..."):
-                        summary_response = model.generate_content(summary_prompt)
-                        st.markdown("### 📋 AI 智慧統整報告")
-                        st.markdown(summary_response.text)
-                except Exception as e:
-                    st.error(f"統整分析失敗: {e}")
+        ...
 
 with tab4:
     st.subheader("📈 長期歷史趨勢與每日營養加總追蹤")

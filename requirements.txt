@@ -1,6 +1,6 @@
 streamlit
-gspread
-oauth2client
 google-generativeai
 pandas
 pillow
+gspread
+oauth2client
