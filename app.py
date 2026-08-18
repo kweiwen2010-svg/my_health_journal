@@ -6,7 +6,7 @@ from PIL import Image
 from datetime import datetime
 import re
 import gspread
-from google.oauth2client.service_account import Credentials
+from google.oauth2.service_account import Credentials
 
 # 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
