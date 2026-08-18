@@ -3,4 +3,4 @@ google-generativeai
 pandas
 pillow
 gspread
-oauth2client
+google-auth

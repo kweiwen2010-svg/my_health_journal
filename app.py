@@ -6,7 +6,7 @@ from PIL import Image
 from datetime import datetime
 import re
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2client.service_account import Credentials
 
 # 1. 頁面設定
 st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
@@ -25,14 +25,14 @@ SHEET_NAME = "health"  # 對應你建立的 Google 試算表名稱
 @st.cache_resource
 def init_gspread():
     scope = [
-        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # 直接從 Streamlit Secrets 讀取憑證，不用去硬碟找 .json 檔
     if "gcp_service_account" in st.secrets:
+        # 直接把 Streamlit Secrets 轉成字典傳入 Google Auth
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     else:
         st.error("❌ 找不到 Streamlit Secrets 中的 [gcp_service_account] 設定！")
         st.stop()
