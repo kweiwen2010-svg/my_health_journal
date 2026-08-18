@@ -28,7 +28,6 @@ def init_gspread():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
-    # 讀取當前資料夾下的 json 憑證檔案
     json_files = [f for f in os.listdir(".") if f.endswith(".json") and "health-" in f]
     if not json_files:
         st.error("❌ 找不到 Google Service Account JSON 憑證檔案！")
@@ -59,10 +58,8 @@ def save_logs_to_cloud():
         sheet.clear()
         if st.session_state.food_logs:
             df_temp = pd.DataFrame(st.session_state.food_logs)
-            # 寫入標題與資料
             sheet.update([df_temp.columns.values.tolist()] + df_temp.values.tolist())
         else:
-            # 若為空則保留表頭
             sheet.update([["日期", "餐別", "身高", "體重", "病史", "內容", "熱量", "蛋白質", "碳水化合物", "脂肪"]])
     except Exception as e:
         st.warning(f"⚠️ 雲端同步失敗: {e}")
@@ -149,7 +146,7 @@ with tab1:
                     "熱量": cal, "蛋白質": pro, "碳水化合物": carb, "脂肪": fat
                 }
                 st.session_state.food_logs.append(new_log)
-                save_logs_to_cloud()  # 同步寫入 Google Sheets
+                save_logs_to_cloud()
                 st.success("紀錄已成功同步至雲端！")
                 st.rerun()
 
@@ -183,7 +180,51 @@ with tab3:
         if target_df.empty:
             st.warning(f"📅 找不到 {selected_date} 的飲食紀錄。")
         else:
-        ...
+            st.success(f"找到 {selected_date} 共 {len(target_df)} 筆餐點紀錄：")
+            for idx, row in target_df.iterrows():
+                with st.expander(f"🕒 {row['日期']} - 【{row['餐別']}】"):
+                    st.markdown(row['內容'])
+            
+            st.divider()
+            st.markdown("### 📊 當日營養攝取視覺化指標")
+            ref_calories = 2400
+            col_v1, col_v2, col_v3 = st.columns(3)
+            col_v1.metric("今日記錄餐數", f"{len(target_df)} 餐")
+            col_v2.metric("參考建議熱量", f"{ref_calories} kcal")
+            col_v3.metric("狀態提示", "需加強營養攝取" if len(target_df) < 3 else "紀錄完整")
+            
+            st.markdown("🎯 **全日紀錄完整度指標**")
+            st.progress(min(len(target_df) / 4.0, 1.0), text=f"已記錄 {len(target_df)} / 4 餐 (早/午/晚/點心)")
+            st.divider()
+            
+            if st.button("🚀 執行 Gemini 綜合營養分析與視覺化建議"):
+                try:
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    meals_summary_text = ""
+                    for idx, row in target_df.iterrows():
+                        meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['內容']}\n"
+                    
+                    summary_prompt = (
+                        f"你是一位專業營養師。請根據以下使用者今日 ({selected_date}) 的所有飲食紀錄內容，進行全日營養總結與評估。\n\n"
+                        f"【使用者個人背景】\n"
+                        f"- 年齡: {st.session_state.user_age} 歲\n"
+                        f"- 身高: {st.session_state.user_height} cm\n"
+                        f"- 體重: {st.session_state.user_weight} kg\n"
+                        f"- 運動狀態: {st.session_state.user_activity}\n"
+                        f"- 病史/禁忌: {st.session_state.user_medical}\n\n"
+                        f"【今日各餐點詳細記錄】\n"
+                        f"{meals_summary_text}\n\n"
+                        f"請提供：\n"
+                        f"1. 今日整體熱量與三大營養素（蛋白質、碳水化合物、脂肪）的綜合評估與數據推估\n"
+                        f"2. 優勢與需要改進的地方\n"
+                        f"3. 針對接下來的晚餐或明天的具體飲食調整建議（語氣請溫暖、專業、具體）"
+                    )
+                    with st.spinner("Gemini 正在為您統整今日營養狀況與圖表解析..."):
+                        summary_response = model.generate_content(summary_prompt)
+                        st.markdown("### 📋 AI 智慧統整報告")
+                        st.markdown(summary_response.text)
+                except Exception as e:
+                    st.error(f"統整分析失敗: {e}")
 
 with tab4:
     st.subheader("📈 長期歷史趨勢與每日營養加總追蹤")
