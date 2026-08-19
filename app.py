@@ -143,7 +143,7 @@ with tab1:
 
         if st.button("✨ 開始 AI 營養分析"):
             try:
-                model = genai.GenerativeModel("gemini-2.5-flash")
+                model = genai.GenerativeModel("gemini-3.6-flash")
                 prompt = (
                     f"你是專業營養師。這是一份【{current_meal_type}】的餐點。\n"
                     f"使用者補充資訊：{supplement_text}\n"
@@ -231,7 +231,7 @@ with tab3:
             
             if st.button("🚀 執行 Gemini 綜合營養分析與視覺化建議"):
                 try:
-                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    model = genai.GenerativeModel("gemini-3.6-flash")
                     meals_summary_text = ""
                     for idx, row in target_df.iterrows():
                         meals_summary_text += f"\n--- 【{row['餐別']} ({row['日期']})】 ---\n{row['內容']}\n"
