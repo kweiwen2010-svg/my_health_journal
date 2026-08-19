@@ -18,10 +18,6 @@ if not api_key:
     st.stop()
 genai.configure(api_key=api_key)
 
-# ... (原本的 API 設定程式碼) ...
-genai.configure(api_key=api_key)
-
-# ⬇️ 請直接貼在這裡
 model = genai.GenerativeModel('gemini-3.6-flash')
 # --- 新增的 SQLite 機制 ---
 def init_db():
@@ -44,7 +40,6 @@ def save_to_db(log):
     conn.close()
 
 init_db() # 執行一次初始化
-# -------------------------
 
 # 3. 檔案儲存路徑
 LOG_FILE = "food_log.csv"
@@ -56,6 +51,7 @@ if "food_logs" not in st.session_state:
     df = pd.read_sql("SELECT * FROM food_logs", conn)
     conn.close()
     st.session_state.food_logs = df.to_dict("records")
+
 # 初始化個人資料
 if "profile_loaded" not in st.session_state:
     if os.path.exists(PROFILE_FILE):
@@ -125,7 +121,6 @@ with tab1:
     camera_file = st.camera_input("拍攝你的餐點")
     uploaded_file = st.file_uploader("或上傳照片", type=["jpg", "jpeg", "png"])
     
-    # 保留你想要的補充說明框
     supplement_text = st.text_area("💡 補充說明 (例如：分食比例、飯後水果等)", placeholder="輸入未拍攝到的食物或分食份量...")
 
     image_to_process = camera_file or uploaded_file
@@ -156,47 +151,28 @@ with tab1:
         if "last_analysis" in st.session_state:
             st.markdown(f"### 💡 【{st.session_state.get('analyzed_meal_type')}】分析結果")
             st.markdown(st.session_state.last_analysis)
+            
+            # 這裡修復了原本凌亂的儲存邏輯與縮排
             if st.button("➕ 將此餐點加入紀錄"):
-        cal, pro, carb, fat = extract_nutrition_values(st.session_state.last_analysis)
-        new_log = {
-            "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-            "餐別": st.session_state.analyzed_meal_type,
-            "身高": st.session_state.user_height,
-            "體重": st.session_state.user_weight,
-            "病史": st.session_state.user_medical,
-            "內容": st.session_state.last_analysis,
-            "熱量": cal, 
-            "蛋白質": pro, 
-            "碳水化合物": carb, 
-            "脂肪": fat
-        }
+                cal, pro, carb, fat = extract_nutrition_values(st.session_state.last_analysis)
+                new_log = {
+                    "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                    "餐別": st.session_state.analyzed_meal_type,
+                    "身高": st.session_state.user_height,
+                    "體重": st.session_state.user_weight,
+                    "病史": st.session_state.user_medical,
+                    "內容": st.session_state.last_analysis,
+                    "熱量": cal, 
+                    "蛋白質": pro, 
+                    "碳水化合物": carb, 
+                    "脂肪": fat
+                }
+                
+                # 統一呼叫儲存並更新畫面
+                save_to_db(new_log)
+                st.session_state.food_logs.append(new_log)
+                st.success("✅ 已成功永久儲存至資料庫！")
 
-        # --- 替換後的寫入資料庫程式碼 ---
-        import sqlite3
-        conn = sqlite3.connect("food_data.db")
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO food_logs (date, meal_type, content, calories, protein, carbs, fat, weight)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            new_log["日期"], 
-            new_log["餐別"], 
-            new_log["內容"], 
-            new_log["熱量"], 
-            new_log["蛋白質"], 
-            new_log["碳水化合物"], 
-            new_log["脂肪"], 
-            new_log["體重"]
-        ))
-        conn.commit()
-        conn.close()
-        
-        # 同時保留 session 讓當下畫面即時更新
-       
-# --- 寫入資料庫並更新畫面 ---
-        save_to_db(new_log)  # 直接呼叫你原本就有的函數
-        st.session_state.food_logs.append(new_log) # 更新畫面讓你知道存好了
-        st.success("✅ 已成功永久儲存至資料庫！")
 with tab2:
     st.subheader("我的飲食日誌")
     if st.button("🗑️ 清空所有紀錄"):
