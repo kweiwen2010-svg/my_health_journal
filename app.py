@@ -12,10 +12,7 @@ st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="ce
 st.title("🥗 AI 智慧營養與飲食記錄器")
 
 # 2. 自動載入 API Key
-api_key = (
-    st.secrets.get("GEMINI_API_KEY") 
-    or os.environ.get("GEMINI_API_KEY")
-)
+api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 if not api_key:
     st.error("❌ 找不到 Gemini API Key！請檢查 Streamlit Secrets 設定。")
     st.stop()
