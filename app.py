@@ -197,7 +197,7 @@ with tab3:
         st.info("目前尚無任何飲食紀錄，請先至「拍照分析」新增紀錄！")
     else:
         df_logs = pd.DataFrame(st.session_state.food_logs)
-        df_logs['only_date'] = pd.to_datetime(df_logs['日期']).dt.date
+        df_logs['only_date'] = pd.to_datetime(df_logs['date']).dt.date
         target_df = df_logs[df_logs['only_date'] == selected_date]
         
         if target_df.empty:
