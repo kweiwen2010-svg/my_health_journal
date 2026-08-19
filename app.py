@@ -50,17 +50,12 @@ init_db() # 執行一次初始化
 LOG_FILE = "food_log.csv"
 PROFILE_FILE = "user_profile.csv"
 
-# 初始化飲食日誌
+# 初始化飲食日誌 (改成讀取 SQLite 資料庫)
 if "food_logs" not in st.session_state:
-    if os.path.exists(LOG_FILE):
-        try:
-            df = pd.read_csv(LOG_FILE)
-            st.session_state.food_logs = df.to_dict("records")
-        except:
-            st.session_state.food_logs = []
-    else:
-        st.session_state.food_logs = []
-
+    conn = sqlite3.connect("food_data.db")
+    df = pd.read_sql("SELECT * FROM food_logs", conn)
+    conn.close()
+    st.session_state.food_logs = df.to_dict("records")
 # 初始化個人資料
 if "profile_loaded" not in st.session_state:
     if os.path.exists(PROFILE_FILE):
@@ -162,26 +157,46 @@ with tab1:
             st.markdown(f"### 💡 【{st.session_state.get('analyzed_meal_type')}】分析結果")
             st.markdown(st.session_state.last_analysis)
             if st.button("➕ 將此餐點加入紀錄"):
-                cal, pro, carb, fat = extract_nutrition_values(st.session_state.last_analysis)
-                new_log = {
-                    "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                    "餐別": st.session_state.analyzed_meal_type,
-                    "身高": st.session_state.user_height,
-                    "體重": st.session_state.user_weight,
-                    "病史": st.session_state.user_medical,
-                    "內容": st.session_state.last_analysis,
-                    "熱量": cal, "蛋白質": pro, "碳水化合物": carb, "脂肪": fat
-                }
-                st.session_state.food_logs.append(new_log)
-                
-                # --- 原本的存檔方式 ---
-                pd.DataFrame(st.session_state.food_logs).to_csv(LOG_FILE, index=False)
-                
-                # --- 新增的同步備份 ---
-                save_to_db(new_log)
-                
-                st.success("紀錄已存入！(並已同步至資料庫)")
-                st.rerun()
+        cal, pro, carb, fat = extract_nutrition_values(st.session_state.last_analysis)
+        new_log = {
+            "日期": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+            "餐別": st.session_state.analyzed_meal_type,
+            "身高": st.session_state.user_height,
+            "體重": st.session_state.user_weight,
+            "病史": st.session_state.user_medical,
+            "內容": st.session_state.last_analysis,
+            "熱量": cal, 
+            "蛋白質": pro, 
+            "碳水化合物": carb, 
+            "脂肪": fat
+        }
+
+        # --- 替換後的寫入資料庫程式碼 ---
+        import sqlite3
+        conn = sqlite3.connect("food_data.db")
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO food_logs (date, meal_type, content, calories, protein, carbs, fat, weight)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            new_log["日期"], 
+            new_log["餐別"], 
+            new_log["內容"], 
+            new_log["熱量"], 
+            new_log["蛋白質"], 
+            new_log["碳水化合物"], 
+            new_log["脂肪"], 
+            new_log["體重"]
+        ))
+        conn.commit()
+        conn.close()
+        
+        # 同時保留 session 讓當下畫面即時更新
+       
+# --- 寫入資料庫並更新畫面 ---
+        save_to_db(new_log)  # 直接呼叫你原本就有的函數
+        st.session_state.food_logs.append(new_log) # 更新畫面讓你知道存好了
+        st.success("✅ 已成功永久儲存至資料庫！")
 with tab2:
     st.subheader("我的飲食日誌")
     if st.button("🗑️ 清空所有紀錄"):
