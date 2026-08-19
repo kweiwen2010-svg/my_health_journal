@@ -19,7 +19,10 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 # ... (原本的 API 設定程式碼) ...
+genai.configure(api_key=api_key)
 
+# ⬇️ 請直接貼在這裡
+model = genai.GenerativeModel('gemini-3.6-flash')
 # --- 新增的 SQLite 機制 ---
 def init_db():
     conn = sqlite3.connect("food_data.db")
