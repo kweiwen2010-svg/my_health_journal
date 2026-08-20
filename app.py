@@ -84,7 +84,7 @@ if menu == "拍照分析":
   user_note = st.text_input("💡 補充說明（例如：分食比例、飯後水果等）")
 
   if uploaded_file is not None:
-    st.image(uploaded_file, caption="已載入餐點圖片", use_column_width=True)
+    st.image(uploaded_file, caption="已載入餐點圖片", use_container_width=True)
 
     if st.button("✨ 開始 AI 營養分析"):
       with st.spinner("AI 營養師正在分析中..."):
