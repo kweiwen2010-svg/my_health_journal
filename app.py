@@ -112,7 +112,25 @@ with tab2:
 with tab3:
     st.title("✨ AI 智慧統整")
     df_logs = load_all_logs()
-    st.write(f"總共記錄了 {len(df_logs)} 筆資料。")
+    if df_logs.empty:
+        st.info("尚無資料可供 AI 統整。")
+    else:
+        st.write(f"目前總共記錄了 {len(df_logs)} 筆飲食資料。")
+        if st.button("🤖 執行 AI 綜合健康與飲食總結"):
+            with st.spinner("AI 正在分析您的整體飲食習慣..."):
+                try:
+                    all_content = "\n".join([f"- {row['date']} ({row['meal_type']}): {row['content']}" for _, row in df_logs.iterrows()])
+                    summary_prompt = f"""
+                    請扮演專業營養師，根據以下使用者的歷史飲食紀錄，給予一份整體的飲食健康評估與改善建議：
+                    使用者個人背景：身高 {user_height}cm, 體重 {user_weight}kg, 年齡 {user_age}歲, 病史備註：{user_medical}
+                    
+                    歷史紀錄：
+                    {all_content}
+                    """
+                    response = model.generate_content(summary_prompt)
+                    st.markdown(response.text)
+                except Exception as e:
+                    st.error(f"AI 統整失敗: {e}")
 
 with tab4:
     st.title("📈 歷史趨勢")
