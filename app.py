@@ -28,8 +28,6 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-
-# 使用 gemini-flash-latest 確保永遠抓取最新的通用模型
 model = genai.GenerativeModel("gemini-flash-latest")
 
 def init_db():
@@ -62,40 +60,10 @@ def update_user_profile(data):
     conn.close()
 
 # ==========================================
-# 3. 介面結構
+# 3. 介面結構（4 個分頁）
 # ==========================================
 st.title("🥗 AI 智慧營養管理")
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📸 記錄", "📖 日誌", "🤖 AI 評估", "📈 趨勢", "⚙️ 設定"])
-
-# ------------------------------------------
-# TAB 5: 個人設定
-# ------------------------------------------
-with tab5:
-    st.subheader("⚙️ 個人檔案設定")
-    p = get_user_profile()
-    
-    with st.form("profile_form"):
-        h_val = st.number_input("身高 (cm)", value=float(p['height']))
-        w_val = st.number_input("體重 (kg)", value=float(p['weight']))
-        a_val = st.number_input("年齡", value=int(p['age']))
-        
-        activities = ["久坐不動", "輕度運動", "中度運動", "高度運動"]
-        act_idx = activities.index(p['activity']) if p['activity'] in activities else 2
-        act_val = st.selectbox("運動狀態", activities, index=act_idx)
-        
-        med_val = st.text_area("健康備註/過敏源", value=str(p['medical']))
-        
-        submitted = st.form_submit_button("💾 儲存個人資料")
-        if submitted:
-            new_p = {
-                "height": h_val,
-                "weight": w_val,
-                "age": a_val,
-                "activity": act_val,
-                "medical": med_val
-            }
-            update_user_profile(new_p)
-            st.success("✅ 個人資料已成功儲存！")
+tab1, tab2, tab3, tab4 = st.tabs(["📸 記錄", "📖 日誌", "🤖 當日總結", "⚙️ 設定"])
 
 # ------------------------------------------
 # TAB 1: 拍照與記錄
@@ -158,36 +126,66 @@ with tab2:
                 st.write(row['content'])
 
 # ------------------------------------------
-# TAB 3: AI 綜合評估（按鈕觸發式）
+# TAB 3: 當日總結
 # ------------------------------------------
 with tab3:
-    st.subheader("🤖 AI 綜合健康建議")
-    st.info("點擊下方按鈕，AI 將根據您所有的歷史飲食紀錄與個人檔案，產出全方位的健康總結報告。")
+    st.subheader("🤖 今日飲食總結")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    st.info(f"📅 系統將自動抓取今天（{today_str}）所有餐點記錄進行加總與營養分析。")
     
-    if st.button("🤖 產生個人化健康總結報告"):
-        with st.spinner("AI 正在綜整您的歷史紀錄與檔案..."):
+    if st.button("📊 產出今日飲食總結報告"):
+        with st.spinner("AI 正在綜整今天的飲食紀錄..."):
             try:
                 p = get_user_profile()
                 conn = sqlite3.connect("food_data.db")
-                df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
+                # 只抓取今天日期的紀錄 (date 欄位開頭為 today_str)
+                df_today = pd.read_sql(f"SELECT meal_type, content FROM food_logs WHERE date LIKE '{today_str}%'", conn)
                 conn.close()
-                logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
                 
-                prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
-                response = model.generate_content(prompt)
-                st.markdown(response.text)
+                if df_today.empty:
+                    st.warning("⚠️ 今天還沒有新增任何飲食紀錄喔！請先至「記錄」分頁拍照上傳。")
+                else:
+                    today_logs = [f"【{row['meal_type']}】\n{row['content']}" for _, row in df_today.iterrows()]
+                    prompt = f"""
+                    請扮演專業營養師，根據用戶資料 {p} 與以下【今日（{today_str}）】的所有飲食紀錄：
+                    {today_logs}
+                    
+                    請給予：
+                    1. 今日總熱量與三大營養素（蛋白質、脂肪、碳水化合物）的粗估加總。
+                    2. 今日飲食的整體優缺點（是否有營養過剩或不足）。
+                    3. 針對明天或接下來的飲食調整建議。
+                    """
+                    response = model.generate_content(prompt)
+                    st.markdown(response.text)
             except Exception as e:
-                st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
+                st.error(f"❌ 產生總結失敗，錯誤訊息：{e}")
 
 # ------------------------------------------
-# TAB 4: 歷史趨勢
+# TAB 4: 個人設定
 # ------------------------------------------
 with tab4:
-    st.subheader("📈 體重記錄清單")
-    conn = sqlite3.connect("food_data.db")
-    df_logs = pd.read_sql("SELECT date, meal_type, weight FROM food_logs", conn)
-    conn.close()
-    if not df_logs.empty:
-        st.dataframe(df_logs, use_container_width=True)
-    else:
-        st.info("目前尚無記錄數據。")
+    st.subheader("⚙️ 個人檔案設定")
+    p = get_user_profile()
+    
+    with st.form("profile_form"):
+        h_val = st.number_input("身高 (cm)", value=float(p['height']))
+        w_val = st.number_input("體重 (kg)", value=float(p['weight']))
+        a_val = st.number_input("年齡", value=int(p['age']))
+        
+        activities = ["久坐不動", "輕度運動", "中度運動", "高度運動"]
+        act_idx = activities.index(p['activity']) if p['activity'] in activities else 2
+        act_val = st.selectbox("運動狀態", activities, index=act_idx)
+        
+        med_val = st.text_area("健康備註/過敏源", value=str(p['medical']))
+        
+        submitted = st.form_submit_button("💾 儲存個人資料")
+        if submitted:
+            new_p = {
+                "height": h_val,
+                "weight": w_val,
+                "age": a_val,
+                "activity": act_val,
+                "medical": med_val
+            }
+            update_user_profile(new_p)
+            st.success("✅ 個人資料已成功儲存！")
