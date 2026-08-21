@@ -28,8 +28,17 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-# 使用目前環境支援的穩定模型
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+# 使用目前最穩定且通用的模型
+def get_ai_model():
+    for m_name in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash"]:
+        try:
+            return genai.GenerativeModel(m_name)
+        except Exception:
+            continue
+    return genai.GenerativeModel("gemini-1.5-flash")
+
+model = get_ai_model()
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
@@ -157,22 +166,26 @@ with tab2:
                 st.write(row['content'])
 
 # ------------------------------------------
-# TAB 3: AI 綜合評估
+# TAB 3: AI 綜合評估（改回按鈕觸發式）
 # ------------------------------------------
 with tab3:
     st.subheader("🤖 AI 綜合健康建議")
-    p = get_user_profile()
-    conn = sqlite3.connect("food_data.db")
-    df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
-    conn.close()
-    logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
+    st.info("點擊下方按鈕，AI 將根據您所有的歷史飲食紀錄與個人檔案，產出全方位的健康總結報告。")
     
-    try:
-        prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
-        response = model.generate_content(prompt)
-        st.markdown(response.text)
-    except Exception as e:
-        st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
+    if st.button("🤖 產生個人化健康總結報告"):
+        with st.spinner("AI 正在綜整您的歷史紀錄與檔案..."):
+            try:
+                p = get_user_profile()
+                conn = sqlite3.connect("food_data.db")
+                df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
+                conn.close()
+                logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
+                
+                prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
+                response = model.generate_content(prompt)
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
 
 # ------------------------------------------
 # TAB 4: 歷史趨勢
