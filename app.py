@@ -28,8 +28,7 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-# 使用支援文字與圖片標準的 Flash 模型
-model = genai.GenerativeModel("gemini-2.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
@@ -142,7 +141,7 @@ with tab1:
         del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌（已恢復卡片式外觀）
+# TAB 2: 飲食日誌
 # ------------------------------------------
 with tab2:
     st.subheader("📖 我的飲食日誌")
@@ -163,13 +162,18 @@ with tab2:
 with tab3:
     st.subheader("🤖 AI 綜合健康建議")
     if st.button("🤖 產生個人化健康總結報告"):
-        p = get_user_profile()
-        conn = sqlite3.connect("food_data.db")
-        df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
-        conn.close()
-        logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
-        prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
-        st.markdown(model.generate_content(prompt).text)
+        with st.spinner("AI 正在綜整您的歷史紀錄..."):
+            try:
+                p = get_user_profile()
+                conn = sqlite3.connect("food_data.db")
+                df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
+                conn.close()
+                logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
+                prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
+                response = model.generate_content(prompt)
+                st.markdown(response.text)
+            except Exception as e:
+                st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
 
 # ------------------------------------------
 # TAB 4: 歷史趨勢
