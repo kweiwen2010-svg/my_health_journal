@@ -29,8 +29,8 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 指定使用 3.6 版本模型
-model = genai.GenerativeModel("gemini-3.6")
+# 使用 gemini-flash-latest 確保永遠抓取最新的通用模型
+model = genai.GenerativeModel("gemini-flash-latest")
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
