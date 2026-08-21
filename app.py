@@ -28,6 +28,7 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
+# 確保使用目前環境支援的穩定模型
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 def init_db():
@@ -141,7 +142,7 @@ with tab1:
         del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌
+# TAB 2: 飲食日誌（改為目錄折疊式）
 # ------------------------------------------
 with tab2:
     st.subheader("📖 我的飲食日誌")
@@ -152,8 +153,8 @@ with tab2:
         st.info("目前尚無飲食紀錄。")
     else:
         for _, row in df.iterrows():
-            with st.container(border=True):
-                st.markdown(f"**⏰ {row['date']} - {row['meal_type']}**")
+            # 使用 st.expander 做出目錄式折疊卡片，預設收合，點擊才展開
+            with st.expander(f"⏰ {row['date']} - 【{row['meal_type']}】"):
                 st.write(row['content'])
 
 # ------------------------------------------
