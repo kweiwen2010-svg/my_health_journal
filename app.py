@@ -29,8 +29,8 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 使用確保支援看圖與文字的標準模型
-model = genai.GenerativeModel("gemini-1.5-flash")
+# 使用指定的 3.6 模型
+model = genai.GenerativeModel("gemini-3.6-flash")
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
