@@ -28,7 +28,7 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-# 確保使用目前環境支援的穩定模型
+# 使用目前環境支援的穩定模型
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 def init_db():
@@ -142,7 +142,7 @@ with tab1:
         del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌（改為目錄折疊式）
+# TAB 2: 飲食日誌（目錄折疊式）
 # ------------------------------------------
 with tab2:
     st.subheader("📖 我的飲食日誌")
@@ -153,7 +153,6 @@ with tab2:
         st.info("目前尚無飲食紀錄。")
     else:
         for _, row in df.iterrows():
-            # 使用 st.expander 做出目錄式折疊卡片，預設收合，點擊才展開
             with st.expander(f"⏰ {row['date']} - 【{row['meal_type']}】"):
                 st.write(row['content'])
 
@@ -162,29 +161,28 @@ with tab2:
 # ------------------------------------------
 with tab3:
     st.subheader("🤖 AI 綜合健康建議")
-    if st.button("🤖 產生個人化健康總結報告"):
-        with st.spinner("AI 正在綜整您的歷史紀錄..."):
-            try:
-                p = get_user_profile()
-                conn = sqlite3.connect("food_data.db")
-                df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
-                conn.close()
-                logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
-                prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
-                response = model.generate_content(prompt)
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
+    p = get_user_profile()
+    conn = sqlite3.connect("food_data.db")
+    df_logs = pd.read_sql("SELECT content FROM food_logs", conn)
+    conn.close()
+    logs_list = df_logs['content'].tolist() if not df_logs.empty else ["無"]
+    
+    try:
+        prompt = f"請扮演專業營養師，根據用戶資料 {p} 與以下歷史飲食紀錄，給予全方位健康與飲食調整建議：{logs_list}"
+        response = model.generate_content(prompt)
+        st.markdown(response.text)
+    except Exception as e:
+        st.error(f"❌ 產生建議失敗，錯誤訊息：{e}")
 
 # ------------------------------------------
 # TAB 4: 歷史趨勢
 # ------------------------------------------
 with tab4:
-    st.subheader("📈 體重變化趨勢")
+    st.subheader("📈 體重記錄清單")
     conn = sqlite3.connect("food_data.db")
-    df_logs = pd.read_sql("SELECT * FROM food_logs", conn)
+    df_logs = pd.read_sql("SELECT date, meal_type, weight FROM food_logs", conn)
     conn.close()
-    if not df_logs.empty and 'weight' in df_logs.columns:
-        st.line_chart(df_logs['weight'])
+    if not df_logs.empty:
+        st.dataframe(df_logs, use_container_width=True)
     else:
-        st.info("累積多筆紀錄後即可觀察體重趨勢。")
+        st.info("目前尚無記錄數據。")
