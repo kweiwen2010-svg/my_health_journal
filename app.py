@@ -28,7 +28,8 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+# 使用支援文字與圖片標準的 Flash 模型
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
@@ -141,7 +142,7 @@ with tab1:
         del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌
+# TAB 2: 飲食日誌（已恢復卡片式外觀）
 # ------------------------------------------
 with tab2:
     st.subheader("📖 我的飲食日誌")
@@ -152,10 +153,9 @@ with tab2:
         st.info("目前尚無飲食紀錄。")
     else:
         for _, row in df.iterrows():
-            with st.container():
+            with st.container(border=True):
                 st.markdown(f"**⏰ {row['date']} - {row['meal_type']}**")
                 st.write(row['content'])
-                st.divider()
 
 # ------------------------------------------
 # TAB 3: AI 綜合評估
