@@ -29,16 +29,8 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 使用目前最穩定且通用的模型
-def get_ai_model():
-    for m_name in ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash"]:
-        try:
-            return genai.GenerativeModel(m_name)
-        except Exception:
-            continue
-    return genai.GenerativeModel("gemini-1.5-flash")
-
-model = get_ai_model()
+# 指定使用 3.6 版本模型
+model = genai.GenerativeModel("gemini-3.6")
 
 def init_db():
     conn = sqlite3.connect("food_data.db")
@@ -166,7 +158,7 @@ with tab2:
                 st.write(row['content'])
 
 # ------------------------------------------
-# TAB 3: AI 綜合評估（改回按鈕觸發式）
+# TAB 3: AI 綜合評估（按鈕觸發式）
 # ------------------------------------------
 with tab3:
     st.subheader("🤖 AI 綜合健康建議")
