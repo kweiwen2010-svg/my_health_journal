@@ -2,5 +2,4 @@ streamlit
 google-generativeai
 pandas
 pillow
-gspread
-google-auth
+psycopg2-binary
