@@ -9,7 +9,7 @@ from PIL import Image
 # ==========================================
 # 1. 頁面與 CSS 設定
 # ==========================================
-st.set_page_config(page_title="AI 智慧營養師", page_icon="🥗", layout="centered")
+st.set_page_config(page_title="AI 智慧營養管理", page_icon="🥗", layout="centered")
 
 st.markdown(
     """
@@ -166,7 +166,7 @@ with tab1:
     del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌（目錄折疊式）
+# TAB 2: 飲食日誌
 # ------------------------------------------
 with tab2:
   st.subheader("📖 我的飲食日誌")
