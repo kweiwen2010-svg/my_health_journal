@@ -7,16 +7,16 @@ import streamlit as st
 from PIL import Image
 
 # ==========================================
-# 1. 頁面與強制放大字體的 CSS 設定
+# 1. 頁面與超大字體的 CSS 設定
 # ==========================================
 st.set_page_config(page_title="AI 智慧營養管理", page_icon="🥗", layout="centered")
 
 st.markdown(
     """
     <style>
-    /* 強制放大整個畫面的基本字體與行高 */
+    /* 將整個畫面的基本字體放大約一倍 (28px) */
     html, body, [class*="css"] {
-        font-size: 20px !important;
+        font-size: 28px !important;
     }
     
     .stApp { 
@@ -26,46 +26,46 @@ st.markdown(
     /* 白色卡片區塊 */
     div[data-testid="stVerticalBlock"] { 
         background-color: white; 
-        border-radius: 15px; 
-        padding: 20px; 
+        border-radius: 20px; 
+        padding: 25px; 
         box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
     }
     
     /* 放大分頁籤 (Tabs) 的文字 */
     .stTabs [data-baseweb="tab"] p {
-        font-size: 22px !important;
+        font-size: 32px !important;
         font-weight: bold !important;
     }
     
     /* 放大所有標題 */
-    h1 { font-size: 36px !important; }
-    h2 { font-size: 30px !important; }
-    h3 { font-size: 24px !important; }
+    h1 { font-size: 48px !important; }
+    h2 { font-size: 38px !important; }
+    h3 { font-size: 32px !important; }
     
     /* 放大按鈕文字與外觀 */
     .stButton>button { 
         width: 100%; 
-        border-radius: 20px; 
+        border-radius: 25px; 
         background-color: #2ecc71; 
         color: white; 
         font-weight: bold; 
-        font-size: 20px !important; 
-        padding: 12px; 
+        font-size: 28px !important; 
+        padding: 18px; 
     }
     
     /* 放大輸入框、下拉選單、文字輸入區域的字體 */
     input, select, textarea, div[data-baseweb="select"] span {
-        font-size: 20px !important;
+        font-size: 28px !important;
     }
     
     /* 放大下拉選單展開後的清單文字 */
     div[data-baseweb="popover"] div {
-        font-size: 20px !important;
+        font-size: 28px !important;
     }
     
     /* 放大折疊目錄 (Expander) 標題文字 */
     .streamlit-expanderHeader p {
-        font-size: 20px !important;
+        font-size: 28px !important;
         font-weight: bold !important;
     }
     </style>
