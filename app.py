@@ -7,32 +7,67 @@ import streamlit as st
 from PIL import Image
 
 # ==========================================
-# 1. 頁面與 CSS 設定（已放大整體字體）
+# 1. 頁面與強制放大字體的 CSS 設定
 # ==========================================
 st.set_page_config(page_title="AI 智慧營養管理", page_icon="🥗", layout="centered")
 
 st.markdown(
     """
     <style>
-    /* 整體字體放大 */
-    .stApp { background-color: #f5f7f9; font-size: 18px !important; }
+    /* 強制放大整個畫面的基本字體與行高 */
+    html, body, [class*="css"] {
+        font-size: 20px !important;
+    }
     
-    /* 調整卡片區塊背景與邊距 */
-    div[data-testid="stVerticalBlock"] { background-color: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .stApp { 
+        background-color: #f5f7f9; 
+    }
     
-    /* 按鈕字體與大小放大 */
-    .stButton>button { width: 100%; border-radius: 20px; background-color: #2ecc71; color: white; font-weight: bold; font-size: 18px !important; padding: 10px; }
+    /* 白色卡片區塊 */
+    div[data-testid="stVerticalBlock"] { 
+        background-color: white; 
+        border-radius: 15px; 
+        padding: 20px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+    }
     
-    /* 輸入框、文字框字體放大 */
-    input, select, textarea { font-size: 18px !important; }
+    /* 放大分頁籤 (Tabs) 的文字 */
+    .stTabs [data-baseweb="tab"] p {
+        font-size: 22px !important;
+        font-weight: bold !important;
+    }
     
-    /* 各層標題字體放大 */
-    h1 { font-size: 32px !important; }
-    h2 { font-size: 26px !important; }
-    h3 { font-size: 22px !important; }
+    /* 放大所有標題 */
+    h1 { font-size: 36px !important; }
+    h2 { font-size: 30px !important; }
+    h3 { font-size: 24px !important; }
     
-    /* Expander 折疊目錄標題字體放大 */
-    .streamlit-expanderHeader { font-size: 18px !important; font-weight: bold; }
+    /* 放大按鈕文字與外觀 */
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 20px; 
+        background-color: #2ecc71; 
+        color: white; 
+        font-weight: bold; 
+        font-size: 20px !important; 
+        padding: 12px; 
+    }
+    
+    /* 放大輸入框、下拉選單、文字輸入區域的字體 */
+    input, select, textarea, div[data-baseweb="select"] span {
+        font-size: 20px !important;
+    }
+    
+    /* 放大下拉選單展開後的清單文字 */
+    div[data-baseweb="popover"] div {
+        font-size: 20px !important;
+    }
+    
+    /* 放大折疊目錄 (Expander) 標題文字 */
+    .streamlit-expanderHeader p {
+        font-size: 20px !important;
+        font-weight: bold !important;
+    }
     </style>
 """,
     unsafe_allow_html=True,
