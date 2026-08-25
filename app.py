@@ -1,8 +1,6 @@
 from datetime import datetime
 import os
-import time
 from google import genai
-from google.genai.errors import APIError
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -35,25 +33,14 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 
-def call_gemini_with_retry(contents, retries=3, delay=2):
-  for attempt in range(retries):
-    try:
-      return client.models.generate_content(
-          model="gemini-3.6-flash", contents=contents
-      )
-    except APIError as e:
-      if e.code == 503 and attempt < retries - 1:
-        time.sleep(delay)
-        continue
-      raise e
-
-
 def get_db_connection():
   database_url = st.secrets.get("DATABASE_URL") or os.environ.get(
       "DATABASE_URL"
   )
   if not database_url:
-    st.error("❌ 找不到 DATABASE_URL！請確認是否已設定 Neon 資料庫連線字串。")
+    st.error(
+        "❌ 找不到 DATABASE_URL！請確認是否已設定 Neon 資料庫連線字串。"
+    )
     st.stop()
   return psycopg2.connect(database_url)
 
@@ -63,10 +50,10 @@ def init_db():
   c = conn.cursor()
   c.execute("""CREATE TABLE IF NOT EXISTS food_logs (
                  id SERIAL PRIMARY KEY, date TEXT, meal_type TEXT, content TEXT, weight REAL)""")
+  c.execute("""CREATE TABLE IF NOT EXISTS daily_summaries (
+                 date TEXT PRIMARY KEY, summary TEXT)""")
   c.execute("""CREATE TABLE IF NOT EXISTS user_profile (
                  id INTEGER PRIMARY KEY, height REAL, weight REAL, age INTEGER, activity TEXT, medical TEXT)""")
-  c.execute("""CREATE TABLE IF NOT EXISTS daily_summaries (
-                 date TEXT PRIMARY KEY, summary_content TEXT)""")
   c.execute(
       """INSERT INTO user_profile (id, height, weight, age, activity, medical) 
                  VALUES (1, 178.0, 75.0, 56, '中度運動', '無') 
@@ -114,56 +101,6 @@ def update_user_profile(data):
   conn.close()
 
 
-# 將產生並儲存總結的函式提早定義於此
-def generate_and_save_summary(target_date):
-  with st.spinner(f"AI 正在綜整 {target_date} 的飲食紀錄..."):
-    try:
-      p = get_user_profile()
-      conn = get_db_connection()
-      df_target = pd.read_sql(
-          "SELECT meal_type, content FROM food_logs WHERE date LIKE %s",
-          conn,
-          params=(f"{target_date}%",),
-      )
-      conn.close()
-
-      if df_target.empty:
-        st.warning(f"⚠️ {target_date} 沒有新增任何飲食紀錄喔！")
-        return
-
-      target_logs = [
-          f"【{row['meal_type']}】\n{row['content']}"
-          for _, row in df_target.iterrows()
-      ]
-      prompt = f"""
-                請扮演專業營養師，根據用戶資料 {p} 與以下【{target_date}】的所有飲食紀錄：
-                {target_logs}
-                
-                請給予：
-                1. 總熱量與三大營養素（蛋白質、脂肪、碳水化合物）的粗估加總。
-                2. 該日飲食的整體優缺點（是否有營養過剩或不足）。
-                3. 針對接下來的飲食調整建議。
-                """
-      response = call_gemini_with_retry(prompt)
-      summary_text = response.text
-
-      conn = get_db_connection()
-      c = conn.cursor()
-      c.execute(
-          """INSERT INTO daily_summaries (date, summary_content) VALUES (%s, %s)
-                     ON CONFLICT (date) DO UPDATE SET summary_content = EXCLUDED.summary_content""",
-          (target_date, summary_text),
-      )
-      conn.commit()
-      c.close()
-      conn.close()
-
-      st.success(f"✅ {target_date} 總結報告已成功產出並永久保存！")
-      st.rerun()
-    except Exception as e:
-      st.error(f"❌ 產生總結失敗，錯誤訊息：{e}")
-
-
 # ==========================================
 # 3. 介面結構（4 個分頁）
 # ==========================================
@@ -201,7 +138,9 @@ with tab1:
                     2. 這份餐點是否適合該用戶目前的身體狀態與運動習慣？
                     3. 有無營養過剩、不足或需要注意的健康風險？
                     """
-          response = call_gemini_with_retry([prompt, image])
+          response = client.models.generate_content(
+              model="gemini-3.6-flash", contents=[prompt, image]
+          )
           st.session_state.last_analysis = response.text
           st.markdown(response.text)
         except Exception as e:
@@ -227,7 +166,7 @@ with tab1:
     del st.session_state.last_analysis
 
 # ------------------------------------------
-# TAB 2: 飲食日誌
+# TAB 2: 飲食日誌（目錄折疊式）
 # ------------------------------------------
 with tab2:
   st.subheader("📖 我的飲食日誌")
@@ -245,29 +184,77 @@ with tab2:
 # TAB 3: 當日總結
 # ------------------------------------------
 with tab3:
-  st.subheader("🤖 今日與歷史飲食總結")
+  st.subheader("⊙ 今日與歷史飲食總結")
   selected_date = st.date_input(
-      "選擇查詢日期", datetime.now()
-  ).strftime("%Y-%m-%d")
+      "選擇查詢日期", value=datetime.now().date()
+  )
+  target_date_str = selected_date.strftime("%Y-%m-%d")
 
+  # 檢查該日期是否已經有保存的總結
   conn = get_db_connection()
-  df_saved = pd.read_sql(
-      "SELECT summary_content FROM daily_summaries WHERE date = %s",
+  df_sum = pd.read_sql(
+      "SELECT summary FROM daily_summaries WHERE date = %s",
       conn,
-      params=(selected_date,),
+      params=(target_date_str,),
   )
   conn.close()
 
-  if not df_saved.empty:
-    st.success(f"📌 以下為 {selected_date} 已保存的營養總結報告：")
-    st.markdown(df_saved.iloc[0]["summary_content"])
-
-    if st.button(f"🔄 重新生成並更新 {selected_date} 的總結"):
-      generate_and_save_summary(selected_date)
+  if not df_sum.empty:
+    st.success(f"📌 以下為 {target_date_str} 已保存的營養總結報告：")
+    st.markdown(df_sum.iloc[0]["summary"])
   else:
-    st.info(f"📅 尚無 {selected_date} 的保存總結。")
-    if st.button(f"📊 產出並永久保存 {selected_date} 總結報告"):
-      generate_and_save_summary(selected_date)
+    st.info(f"📅 尚無 {target_date_str} 的保存總結。")
+
+    # 檢查該日期是否有飲食紀錄
+    conn = get_db_connection()
+    df_today = pd.read_sql(
+        "SELECT meal_type, content FROM food_logs WHERE date LIKE %s",
+        conn,
+        params=(f"{target_date_str}%",),
+    )
+    conn.close()
+
+    if df_today.empty:
+      st.warning(f"⚠️ {target_date_str} 沒有新增任何飲食紀錄喔！")
+    else:
+      if st.button(f"📊 產出並永久保存 {target_date_str} 總結報告"):
+        with st.spinner(f"AI 正在綜整 {target_date_str} 的飲食紀錄..."):
+          try:
+            p = get_user_profile()
+            today_logs = [
+                f"【{row['meal_type']}】\n{row['content']}"
+                for _, row in df_today.iterrows()
+            ]
+            prompt = f"""
+                        請扮演專業營養師，根據用戶資料 {p} 與以下【{target_date_str}】的所有飲食紀錄：
+                        {today_logs}
+                        
+                        請給予：
+                        1. 當日總熱量與三大營養素（蛋白質、脂肪、碳水化合物）的粗估加總。
+                        2. 當日飲食的整體優缺點（是否有營養過剩或不足）。
+                        3. 針對接下來的飲食調整建議。
+                        """
+            response = client.models.generate_content(
+                model="gemini-3.6-flash", contents=prompt
+            )
+            summary_text = response.text
+
+            # 寫入資料庫永久保存
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO daily_summaries (date, summary) VALUES (%s, %s)
+                           ON CONFLICT (date) DO UPDATE SET summary = EXCLUDED.summary""",
+                (target_date_str, summary_text),
+            )
+            conn.commit()
+            c.close()
+            conn.close()
+
+            st.success(f"✅ {target_date_str} 總結報告已成功產出並永久保存！")
+            st.rerun()
+          except Exception as e:
+            st.error(f"❌ 產生總結失敗，錯誤訊息：{e}")
 
 # ------------------------------------------
 # TAB 4: 個人設定
