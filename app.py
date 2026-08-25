@@ -181,16 +181,17 @@ with tab2:
         st.write(row["content"])
 
 # ------------------------------------------
-# TAB 3: 當日總結（加上安全防護）
+# TAB 3: 當日總結（目錄式收納選單）
 # ------------------------------------------
 with tab3:
-  st.subheader("⊙ 今日與歷史飲食總結")
+  st.subheader("⊙ 歷史與當日飲食總結目錄")
+
+  # 1. 查詢特定日期的總結
   selected_date = st.date_input(
       "選擇查詢日期", value=datetime.now().date()
   )
   target_date_str = selected_date.strftime("%Y-%m-%d")
 
-  # 安全讀取總結（若表格出錯自動重建並重試）
   df_sum = pd.DataFrame()
   try:
     conn = get_db_connection()
@@ -201,20 +202,10 @@ with tab3:
     )
     conn.close()
   except Exception:
-    init_db()
-    try:
-      conn = get_db_connection()
-      df_sum = pd.read_sql(
-          "SELECT summary FROM daily_summaries WHERE date = %s",
-          conn,
-          params=(target_date_str,),
-      )
-      conn.close()
-    except Exception:
-      df_sum = pd.DataFrame()
+    df_sum = pd.DataFrame()
 
   if not df_sum.empty:
-    st.success(f"📌 以下為 {target_date_str} 已保存的營養總結報告：")
+    st.success(f"📌 {target_date_str} 營養總結報告：")
     st.markdown(df_sum.iloc[0]["summary"])
   else:
     st.info(f"📅 尚無 {target_date_str} 的保存總結。")
@@ -227,9 +218,7 @@ with tab3:
     )
     conn.close()
 
-    if df_today.empty:
-      st.warning(f"⚠️ {target_date_str} 沒有新增任何飲食紀錄喔！")
-    else:
+    if not df_today.empty:
       if st.button(f"📊 產出並永久保存 {target_date_str} 總結報告"):
         with st.spinner(f"AI 正在綜整 {target_date_str} 的飲食紀錄..."):
           try:
@@ -263,10 +252,32 @@ with tab3:
             c.close()
             conn.close()
 
-            st.success(f"✅ {target_date_str} 總結報告已成功產出並永久保存！")
+            st.success(f"✅ {target_date_str} 總結報告已成功儲存！")
             st.rerun()
           except Exception as e:
-            st.error(f"❌ 產生總結失敗，錯誤訊息：{e}")
+            st.error(f"❌ 產生失敗：{e}")
+
+  st.markdown("---")
+  st.markdown("### 📚 歷史總結目錄總覽")
+  # 2. 顯示所有歷史總結的目錄清單（點開可看內容）
+  try:
+    conn = get_db_connection()
+    df_all_sums = pd.read_sql(
+        "SELECT date, summary FROM daily_summaries ORDER BY date DESC", conn
+    )
+    conn.close()
+
+    if df_all_sums.empty:
+      st.info("目前尚無任何歷史總結紀錄。")
+    else:
+      for _, row in df_all_sums.iterrows():
+        # 用 expander 做出像目錄一樣點開可看的清單
+        with st.expander(
+            f"📂 營養總結報告：{row['date']} (點擊展開)"
+        ):
+          st.markdown(row["summary"])
+  except Exception:
+    st.info("目前尚無歷史總結目錄資料。")
 
 # ------------------------------------------
 # TAB 4: 個人設定
