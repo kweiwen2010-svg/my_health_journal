@@ -48,6 +48,7 @@ def get_db_connection():
 def init_db():
   conn = get_db_connection()
   c = conn.cursor()
+  # 建立所有需要的表格
   c.execute("""CREATE TABLE IF NOT EXISTS food_logs (
                  id SERIAL PRIMARY KEY, date TEXT, meal_type TEXT, content TEXT, weight REAL)""")
   c.execute("""CREATE TABLE IF NOT EXISTS daily_summaries (
@@ -191,13 +192,24 @@ with tab3:
   target_date_str = selected_date.strftime("%Y-%m-%d")
 
   # 檢查該日期是否已經有保存的總結
-  conn = get_db_connection()
-  df_sum = pd.read_sql(
-      "SELECT summary FROM daily_summaries WHERE date = %s",
-      conn,
-      params=(target_date_str,),
-  )
-  conn.close()
+  try:
+    conn = get_db_connection()
+    df_sum = pd.read_sql(
+        "SELECT summary FROM daily_summaries WHERE date = %s",
+        conn,
+        params=(target_date_str,),
+    )
+    conn.close()
+  except Exception:
+    # 若資料表依然出錯，手動建立一次再讀取
+    init_db()
+    conn = get_db_connection()
+    df_sum = pd.read_sql(
+        "SELECT summary FROM daily_summaries WHERE date = %s",
+        conn,
+        params=(target_date_str,),
+    )
+    conn.close()
 
   if not df_sum.empty:
     st.success(f"📌 以下為 {target_date_str} 已保存的營養總結報告：")
@@ -205,7 +217,6 @@ with tab3:
   else:
     st.info(f"📅 尚無 {target_date_str} 的保存總結。")
 
-    # 檢查該日期是否有飲食紀錄
     conn = get_db_connection()
     df_today = pd.read_sql(
         "SELECT meal_type, content FROM food_logs WHERE date LIKE %s",
@@ -239,7 +250,6 @@ with tab3:
             )
             summary_text = response.text
 
-            # 寫入資料庫永久保存
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
