@@ -7,16 +7,32 @@ import streamlit as st
 from PIL import Image
 
 # ==========================================
-# 1. 頁面與 CSS 設定
+# 1. 頁面與 CSS 設定（已放大整體字體）
 # ==========================================
 st.set_page_config(page_title="AI 智慧營養管理", page_icon="🥗", layout="centered")
 
 st.markdown(
     """
     <style>
-    .stApp { background-color: #f5f7f9; }
-    div[data-testid="stVerticalBlock"] { background-color: white; border-radius: 15px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-    .stButton>button { width: 100%; border-radius: 20px; background-color: #2ecc71; color: white; font-weight: bold; }
+    /* 整體字體放大 */
+    .stApp { background-color: #f5f7f9; font-size: 18px !important; }
+    
+    /* 調整卡片區塊背景與邊距 */
+    div[data-testid="stVerticalBlock"] { background-color: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    
+    /* 按鈕字體與大小放大 */
+    .stButton>button { width: 100%; border-radius: 20px; background-color: #2ecc71; color: white; font-weight: bold; font-size: 18px !important; padding: 10px; }
+    
+    /* 輸入框、文字框字體放大 */
+    input, select, textarea { font-size: 18px !important; }
+    
+    /* 各層標題字體放大 */
+    h1 { font-size: 32px !important; }
+    h2 { font-size: 26px !important; }
+    h3 { font-size: 22px !important; }
+    
+    /* Expander 折疊目錄標題字體放大 */
+    .streamlit-expanderHeader { font-size: 18px !important; font-weight: bold; }
     </style>
 """,
     unsafe_allow_html=True,
@@ -186,7 +202,6 @@ with tab2:
 with tab3:
   st.subheader("⊙ 歷史與當日飲食總結目錄")
 
-  # 1. 查詢特定日期的總結
   selected_date = st.date_input(
       "選擇查詢日期", value=datetime.now().date()
   )
@@ -259,7 +274,6 @@ with tab3:
 
   st.markdown("---")
   st.markdown("### 📚 歷史總結目錄總覽")
-  # 2. 顯示所有歷史總結的目錄清單（點開可看內容）
   try:
     conn = get_db_connection()
     df_all_sums = pd.read_sql(
@@ -271,7 +285,6 @@ with tab3:
       st.info("目前尚無任何歷史總結紀錄。")
     else:
       for _, row in df_all_sums.iterrows():
-        # 用 expander 做出像目錄一樣點開可看的清單
         with st.expander(
             f"📂 營養總結報告：{row['date']} (點擊展開)"
         ):
