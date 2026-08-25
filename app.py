@@ -48,7 +48,6 @@ def get_db_connection():
 def init_db():
   conn = get_db_connection()
   c = conn.cursor()
-  # 建立所有需要的表格
   c.execute("""CREATE TABLE IF NOT EXISTS food_logs (
                  id SERIAL PRIMARY KEY, date TEXT, meal_type TEXT, content TEXT, weight REAL)""")
   c.execute("""CREATE TABLE IF NOT EXISTS daily_summaries (
@@ -182,7 +181,7 @@ with tab2:
         st.write(row["content"])
 
 # ------------------------------------------
-# TAB 3: 當日總結
+# TAB 3: 當日總結（加上安全防護）
 # ------------------------------------------
 with tab3:
   st.subheader("⊙ 今日與歷史飲食總結")
@@ -191,7 +190,8 @@ with tab3:
   )
   target_date_str = selected_date.strftime("%Y-%m-%d")
 
-  # 檢查該日期是否已經有保存的總結
+  # 安全讀取總結（若表格出錯自動重建並重試）
+  df_sum = pd.DataFrame()
   try:
     conn = get_db_connection()
     df_sum = pd.read_sql(
@@ -201,15 +201,17 @@ with tab3:
     )
     conn.close()
   except Exception:
-    # 若資料表依然出錯，手動建立一次再讀取
     init_db()
-    conn = get_db_connection()
-    df_sum = pd.read_sql(
-        "SELECT summary FROM daily_summaries WHERE date = %s",
-        conn,
-        params=(target_date_str,),
-    )
-    conn.close()
+    try:
+      conn = get_db_connection()
+      df_sum = pd.read_sql(
+          "SELECT summary FROM daily_summaries WHERE date = %s",
+          conn,
+          params=(target_date_str,),
+      )
+      conn.close()
+    except Exception:
+      df_sum = pd.DataFrame()
 
   if not df_sum.empty:
     st.success(f"📌 以下為 {target_date_str} 已保存的營養總結報告：")
