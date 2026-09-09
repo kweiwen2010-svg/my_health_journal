@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import re
 from google import genai
@@ -194,10 +194,57 @@ def speak_score_feedback(score):
   components.html(js_code, height=0)
 
 
+def get_streak_days():
+  """計算用戶連續打卡的天數"""
+  try:
+    conn = get_db_connection()
+    query = "SELECT DISTINCT LEFT(date, 10) as log_date FROM food_logs ORDER BY log_date DESC"
+    df = pd.read_sql(query, conn)
+    conn.close()
+
+    if df.empty:
+      return 0
+
+    logged_dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in df['log_date']]
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    
+    if logged_dates[0] != today and logged_dates[0] != yesterday:
+      return 0
+
+    streak = 0
+    expected_date = logged_dates[0]
+    for d in logged_dates:
+      if d == expected_date:
+        streak += 1
+        expected_date -= timedelta(days=1)
+      elif d < expected_date:
+        break
+    return streak
+  except Exception:
+    return 0
+
+
 # ==========================================
 # 3. 介面結構（4 個分頁）
 # ==========================================
 st.title("🥗 AI 智慧營養管理")
+
+# 顯示連續打卡成就看板
+streak = get_streak_days()
+if streak >= 30:
+  badge = "👑 飲食掌控大師 (連續30天)"
+elif streak >= 7:
+  badge = "🔥 自律達人 (連續7天)"
+elif streak >= 3:
+  badge = "⭐ 好的開始 (連續3天)"
+elif streak >= 1:
+  badge = "🌱 新手上路 (已打卡)"
+else:
+  badge = "💤 尚未開始打卡"
+
+st.info(f"🏆 目前連續打卡成就：**{badge}** （已連續打卡 {streak} 天）")
+
 tab1, tab2, tab3, tab4 = st.tabs(["📸 記錄", "📖 日誌", "🤖 當日總結", "⚙️ 設定"])
 
 # ------------------------------------------
@@ -219,7 +266,8 @@ with tab1:
       with st.spinner("AI 正在結合您的個人資料進行深度分析..."):
         try:
           p = get_user_profile()
-          prompt = f"""
+          prompt = [
+              f"""
                     你是一位專業營養師。請根據以下用戶資料分析照片中的餐點：
                     - 用戶身型：{p['age']}歲, {p['height']}cm, {p['weight']}kg
                     - 運動狀態：{p['activity']}
@@ -230,9 +278,11 @@ with tab1:
                     1. 這份餐點大致包含哪些食物與營養成分？
                     2. 這份餐點是否適合該用戶目前的身體狀態與運動習慣？
                     3. 有無營養過剩、不足或需要注意的健康風險？
-                    """
+                    """,
+              image,
+          ]
           response = client.models.generate_content(
-              model="gemini-3.6-flash", contents=[prompt, image]
+              model="gemini-2.5-flash", contents=prompt
           )
           st.session_state.last_analysis = response.text
           st.markdown(response.text)
@@ -347,7 +397,7 @@ with tab3:
                         3. 針對接下來的飲食調整建議。
                         """
             response = client.models.generate_content(
-                model="geminit-3.6-flash" if False else "gemini-3.6-flash", contents=prompt
+                model="gemini-2.5-flash", contents=prompt
             )
             summary_text = response.text
             summary_score = extract_score(summary_text)
