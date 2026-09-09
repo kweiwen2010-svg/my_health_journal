@@ -5,6 +5,7 @@ from google import genai
 import pandas as pd
 import psycopg2
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 
 # ==========================================
@@ -170,7 +171,27 @@ def extract_score(text):
   match = re.search(r'\[健康分數:\s*(\d+)分?\]', text)
   if match:
     return float(match.group(1))
-  return 70.0  # 預設預設分數
+  return 70.0  # 預設分數
+
+
+def speak_score_feedback(score):
+  """根據分數高低，透過前端語音發出稱讚或噓聲"""
+  if score >= 90:
+    message = f"太棒了！分數高達 {int(score)} 分，這餐簡直完美，繼續保持！"
+  elif score < 70:
+    message = f"母湯喔！只有 {int(score)} 分，這餐要稍微檢討一下囉，噓～"
+  else:
+    message = f"這餐獲得 {int(score)} 分，表現中規中矩，還可以更好喔！"
+
+  js_code = f"""
+    <script>
+        const utterance = new SpeechSynthesisUtterance("{message}");
+        utterance.lang = 'zh-TW';
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+    </script>
+    """
+  components.html(js_code, height=0)
 
 
 # ==========================================
@@ -236,6 +257,10 @@ with tab1:
     conn.commit()
     c.close()
     conn.close()
+    
+    # 觸發語音特效
+    speak_score_feedback(score_val)
+    
     st.success(f"✅ 紀錄成功已存入日誌！(評分: {score_val}分)")
     del st.session_state.last_analysis
 
@@ -322,7 +347,7 @@ with tab3:
                         3. 針對接下來的飲食調整建議。
                         """
             response = client.models.generate_content(
-                model="gemini-3.6-flash", contents=prompt
+                model="geminit-3.6-flash" if False else "gemini-3.6-flash", contents=prompt
             )
             summary_text = response.text
             summary_score = extract_score(summary_text)
@@ -337,6 +362,9 @@ with tab3:
             conn.commit()
             c.close()
             conn.close()
+
+            # 總結產出時也觸發語音特效
+            speak_score_feedback(summary_score)
 
             st.success(f"✅ {target_date_str} 總結報告已成功儲存！")
             st.rerun()
