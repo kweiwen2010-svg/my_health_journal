@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import re
 from google import genai
@@ -107,8 +107,7 @@ def init_db():
                  date TEXT PRIMARY KEY, summary TEXT)""")
   c.execute("""CREATE TABLE IF NOT EXISTS user_profile (
                  id INTEGER PRIMARY KEY, height REAL, weight REAL, age INTEGER, activity TEXT, medical TEXT)""")
-  
-  # 安全為舊表格追加分數欄位 (若已存在會自動忽略錯誤)
+
   try:
     c.execute("ALTER TABLE food_logs ADD COLUMN score REAL;")
   except Exception:
@@ -167,84 +166,69 @@ def update_user_profile(data):
 
 
 def extract_score(text):
-  """從 AI 回覆中用正規表達式抓取分數"""
   match = re.search(r'\[健康分數:\s*(\d+)分?\]', text)
   if match:
     return float(match.group(1))
-  return 70.0  # 預設分數
+  return 70.0
 
 
-def speak_score_feedback(score):
-  """根據分數高低，透過前端語音發出稱讚或噓聲"""
-  if score >= 90:
-    message = f"太棒了！分數高達 {int(score)} 分，這餐簡直完美，繼續保持！"
-  elif score < 70:
-    message = f"母湯喔！只有 {int(score)} 分，這餐要稍微檢討一下囉，噓～"
-  else:
-    message = f"這餐獲得 {int(score)} 分，表現中規中矩，還可以更好喔！"
-
-  js_code = f"""
-    <script>
-        const utterance = new SpeechSynthesisUtterance("{message}");
-        utterance.lang = 'zh-TW';
-        utterance.rate = 1.0;
-        window.speechSynthesis.speak(utterance);
-    </script>
-    """
-  components.html(js_code, height=0)
-
-
-def get_streak_days():
-  """計算用戶連續打卡的天數"""
-  try:
-    conn = get_db_connection()
-    query = "SELECT DISTINCT LEFT(date, 10) as log_date FROM food_logs ORDER BY log_date DESC"
-    df = pd.read_sql(query, conn)
-    conn.close()
-
-    if df.empty:
-      return 0
-
-    logged_dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in df['log_date']]
-    today = datetime.now().date()
-    yesterday = today - timedelta(days=1)
-    
-    if logged_dates[0] != today and logged_dates[0] != yesterday:
-      return 0
-
-    streak = 0
-    expected_date = logged_dates[0]
-    for d in logged_dates:
-      if d == expected_date:
-        streak += 1
-        expected_date -= timedelta(days=1)
-      elif d < expected_date:
-        break
-    return streak
-  except Exception:
-    return 0
+def trigger_feedback(score):
+  """根據分數在 AI 分析完畢時即時發出聲效與特效 (>=85 稱讚，<=60 噓聲)"""
+  if score >= 85:
+    st.balloons()
+    components.html(
+        """
+        <script>
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, time, delay) {
+            setTimeout(() => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.value = freq;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + time);
+                osc.stop(ctx.currentTime + time);
+            }, delay);
+        }
+        playTone(523.25, 0.2, 0);   // C5
+        playTone(659.25, 0.2, 150); // E5
+        playTone(783.99, 0.4, 300); // G5
+        </script>
+        """,
+        height=0,
+    )
+  elif score <= 60:
+    components.html(
+        """
+        <script>
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, time, delay) {
+            setTimeout(() => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.value = freq;
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + time);
+                osc.stop(ctx.currentTime + time);
+            }, delay);
+        }
+        playTone(220, 0.4, 0);    // A3
+        playTone(185, 0.5, 200);  // F#3
+        </script>
+        """,
+        height=0,
+    )
 
 
 # ==========================================
 # 3. 介面結構（4 個分頁）
 # ==========================================
 st.title("🥗 AI 智慧營養管理")
-
-# 顯示連續打卡成就看板
-streak = get_streak_days()
-if streak >= 30:
-  badge = "👑 飲食掌控大師 (連續30天)"
-elif streak >= 7:
-  badge = "🔥 自律達人 (連續7天)"
-elif streak >= 3:
-  badge = "⭐ 好的開始 (連續3天)"
-elif streak >= 1:
-  badge = "🌱 新手上路 (已打卡)"
-else:
-  badge = "💤 尚未開始打卡"
-
-st.info(f"🏆 目前連續打卡成就：**{badge}** （已連續打卡 {streak} 天）")
-
 tab1, tab2, tab3, tab4 = st.tabs(["📸 記錄", "📖 日誌", "🤖 當日總結", "⚙️ 設定"])
 
 # ------------------------------------------
@@ -266,8 +250,7 @@ with tab1:
       with st.spinner("AI 正在結合您的個人資料進行深度分析..."):
         try:
           p = get_user_profile()
-          prompt = [
-              f"""
+          prompt = f"""
                     你是一位專業營養師。請根據以下用戶資料分析照片中的餐點：
                     - 用戶身型：{p['age']}歲, {p['height']}cm, {p['weight']}kg
                     - 運動狀態：{p['activity']}
@@ -278,19 +261,28 @@ with tab1:
                     1. 這份餐點大致包含哪些食物與營養成分？
                     2. 這份餐點是否適合該用戶目前的身體狀態與運動習慣？
                     3. 有無營養過剩、不足或需要注意的健康風險？
-                    """,
-              image,
-          ]
+                    """
           response = client.models.generate_content(
-              model="gemini-3.6-flash", contents=prompt
+              model="gemini-3.6-flash", contents=[prompt, image]
           )
-          st.session_state.last_analysis = response.text
-          st.markdown(response.text)
+          analysis_text = response.text
+          score_val = extract_score(analysis_text)
+
+          st.session_state.last_analysis = analysis_text
+          st.session_state.last_score = score_val
+
+          st.markdown(analysis_text)
+
+          # 立即在分析完發出聲音與特效
+          trigger_feedback(score_val)
+
         except Exception as e:
           st.error(f"❌ 分析失敗，錯誤訊息：{e}")
 
   if "last_analysis" in st.session_state and st.button("➕ 加入日誌"):
-    score_val = extract_score(st.session_state.last_analysis)
+    score_val = st.session_state.get(
+        "last_score", extract_score(st.session_state.last_analysis)
+    )
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
@@ -307,12 +299,10 @@ with tab1:
     conn.commit()
     c.close()
     conn.close()
-    
-    # 觸發語音特效
-    speak_score_feedback(score_val)
-    
     st.success(f"✅ 紀錄成功已存入日誌！(評分: {score_val}分)")
     del st.session_state.last_analysis
+    if "last_score" in st.session_state:
+      del st.session_state.last_score
 
 # ------------------------------------------
 # TAB 2: 飲食日誌
@@ -320,9 +310,7 @@ with tab1:
 with tab2:
   st.subheader("📖 我的飲食日誌")
   conn = get_db_connection()
-  df = pd.read_sql(
-      "SELECT * FROM food_logs ORDER BY date DESC", conn
-  )
+  df = pd.read_sql("SELECT * FROM food_logs ORDER BY date DESC", conn)
   conn.close()
   if df.empty:
     st.info("目前尚無飲食紀錄。")
@@ -361,7 +349,7 @@ with tab3:
 
   if not df_sum.empty:
     day_score_text = (
-        f" (總結評分: {int(df_sum.iloc[0]['score'])}分)"
+        f" (綜合評分: {int(df_sum.iloc[0]['score'])}分)"
         if pd.notnull(df_sum.iloc[0]["score"])
         else ""
     )
@@ -413,8 +401,8 @@ with tab3:
             c.close()
             conn.close()
 
-            # 總結產出時也觸發語音特效
-            speak_score_feedback(summary_score)
+            # 立即在總結生成時發出聲音與特效
+            trigger_feedback(summary_score)
 
             st.success(f"✅ {target_date_str} 總結報告已成功儲存！")
             st.rerun()
@@ -435,6 +423,9 @@ with tab3:
     if df_scores.empty:
       st.info("目前尚無足夠的每日總結分數來繪製趨勢圖。")
     else:
+      # 強制將 score 欄位轉換為數值，修復縱軸刻度異常問題
+      df_scores["score"] = pd.to_numeric(df_scores["score"], errors="coerce")
+      df_scores = df_scores.dropna(subset=["score"])
       df_scores["date"] = pd.to_datetime(df_scores["date"])
       df_scores.set_index("date", inplace=True)
       st.line_chart(df_scores["score"])
