@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 import re
+import altair as alt
 from google import genai
 import pandas as pd
 import psycopg2
@@ -173,7 +174,6 @@ def extract_score(text):
 
 
 def trigger_feedback(score):
-  """根據分數在 AI 分析完畢時即時發出聲效與特效 (>=85 稱讚，<=60 噓聲)"""
   if score >= 85:
     st.balloons()
     components.html(
@@ -250,7 +250,8 @@ with tab1:
       with st.spinner("AI 正在結合您的個人資料進行深度分析..."):
         try:
           p = get_user_profile()
-          prompt = f"""
+          prompt = [
+              f"""
                     你是一位專業營養師。請根據以下用戶資料分析照片中的餐點：
                     - 用戶身型：{p['age']}歲, {p['height']}cm, {p['weight']}kg
                     - 運動狀態：{p['activity']}
@@ -261,9 +262,11 @@ with tab1:
                     1. 這份餐點大致包含哪些食物與營養成分？
                     2. 這份餐點是否適合該用戶目前的身體狀態與運動習慣？
                     3. 有無營養過剩、不足或需要注意的健康風險？
-                    """
+                    """,
+              image,
+          ]
           response = client.models.generate_content(
-              model="gemini-3.6-flash", contents=[prompt, image]
+              model="gemini-3.6-flash", contents=prompt
           )
           analysis_text = response.text
           score_val = extract_score(analysis_text)
@@ -272,8 +275,6 @@ with tab1:
           st.session_state.last_score = score_val
 
           st.markdown(analysis_text)
-
-          # 立即在分析完發出聲音與特效
           trigger_feedback(score_val)
 
         except Exception as e:
@@ -401,7 +402,6 @@ with tab3:
             c.close()
             conn.close()
 
-            # 立即在總結生成時發出聲音與特效
             trigger_feedback(summary_score)
 
             st.success(f"✅ {target_date_str} 總結報告已成功儲存！")
@@ -423,12 +423,32 @@ with tab3:
     if df_scores.empty:
       st.info("目前尚無足夠的每日總結分數來繪製趨勢圖。")
     else:
-      # 強制將 score 欄位轉換為數值，修復縱軸刻度異常問題
+      # 確保格式正確
       df_scores["score"] = pd.to_numeric(df_scores["score"], errors="coerce")
       df_scores = df_scores.dropna(subset=["score"])
       df_scores["date"] = pd.to_datetime(df_scores["date"])
-      df_scores.set_index("date", inplace=True)
-      st.line_chart(df_scores["score"])
+
+      # 使用 Altair 繪製精準圖表：固定縱軸 0 到 100，橫軸顯示日期
+      chart = (
+          alt.Chart(df_scores)
+          .mark_line(point=True, strokeWidth=3)
+          .encode(
+              x=alt.X("date:T", title="日期", axis=alt.Axis(format="%m/%d")),
+              y=alt.Y(
+                  "score:Q",
+                  title="健康分數",
+                  scale=alt.Scale(domain=[0, 100]),
+              ),
+              tooltip=[
+                  alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"),
+                  alt.Tooltip("score:Q", title="分數"),
+              ],
+          )
+          .properties(height=350)
+          .interactive()
+      )
+
+      st.altair_chart(chart, use_container_width=True)
   except Exception:
     st.info("目前尚無趨勢圖資料。")
 
@@ -443,7 +463,7 @@ with tab3:
     conn.close()
 
     if df_all_sums.empty:
-      st.info("目前尚無任何歷史總結紀錄。")
+      st.info("print('目前尚無任何歷史總結紀錄。')")
     else:
       for _, row in df_all_sums.iterrows():
         s_txt = (
