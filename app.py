@@ -282,7 +282,7 @@ with tab1:
               image,
           ]
           response = client.models.generate_content(
-              model="gemini-2.5-flash", contents=prompt
+              model="gemini-3.6-flash", contents=prompt
           )
           st.session_state.last_analysis = response.text
           st.markdown(response.text)
@@ -397,7 +397,7 @@ with tab3:
                         3. 針對接下來的飲食調整建議。
                         """
             response = client.models.generate_content(
-                model="gemini-2.5-flash", contents=prompt
+                model="gemini-3.6-flash", contents=prompt
             )
             summary_text = response.text
             summary_score = extract_score(summary_text)
