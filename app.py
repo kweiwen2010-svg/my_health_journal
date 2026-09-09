@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import re
 from google import genai
 import pandas as pd
 import psycopg2
@@ -105,6 +106,18 @@ def init_db():
                  date TEXT PRIMARY KEY, summary TEXT)""")
   c.execute("""CREATE TABLE IF NOT EXISTS user_profile (
                  id INTEGER PRIMARY KEY, height REAL, weight REAL, age INTEGER, activity TEXT, medical TEXT)""")
+  
+  # 安全為舊表格追加分數欄位 (若已存在會自動忽略錯誤)
+  try:
+    c.execute("ALTER TABLE food_logs ADD COLUMN score REAL;")
+  except Exception:
+    conn.rollback()
+
+  try:
+    c.execute("ALTER TABLE daily_summaries ADD COLUMN score REAL;")
+  except Exception:
+    conn.rollback()
+
   c.execute(
       """INSERT INTO user_profile (id, height, weight, age, activity, medical) 
                  VALUES (1, 178.0, 75.0, 56, '中度運動', '無') 
@@ -152,6 +165,14 @@ def update_user_profile(data):
   conn.close()
 
 
+def extract_score(text):
+  """從 AI 回覆中用正規表達式抓取分數"""
+  match = re.search(r'\[健康分數:\s*(\d+)分?\]', text)
+  if match:
+    return float(match.group(1))
+  return 70.0  # 預設預設分數
+
+
 # ==========================================
 # 3. 介面結構（4 個分頁）
 # ==========================================
@@ -184,7 +205,7 @@ with tab1:
                     - 健康備註/過敏源：{p['medical']}
                     - 用戶補充說明：{user_note}
                     
-                    請評估：
+                    請務必在回覆的最開頭明確給出一個 0 到 100 的健康評分，格式固定為：「[健康分數: 85分]」，接著再提供詳細分析：
                     1. 這份餐點大致包含哪些食物與營養成分？
                     2. 這份餐點是否適合該用戶目前的身體狀態與運動習慣？
                     3. 有無營養過剩、不足或需要注意的健康風險？
@@ -198,22 +219,24 @@ with tab1:
           st.error(f"❌ 分析失敗，錯誤訊息：{e}")
 
   if "last_analysis" in st.session_state and st.button("➕ 加入日誌"):
+    score_val = extract_score(st.session_state.last_analysis)
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO food_logs (date, meal_type, content, weight) VALUES (%s,"
-        " %s, %s, %s)",
+        "INSERT INTO food_logs (date, meal_type, content, weight, score) VALUES"
+        " (%s, %s, %s, %s, %s)",
         (
             datetime.now().strftime("%Y-%m-%d %H:%M"),
             meal_type,
             st.session_state.last_analysis,
             get_user_profile()["weight"],
+            score_val,
         ),
     )
     conn.commit()
     c.close()
     conn.close()
-    st.success("✅ 紀錄成功已存入日誌！")
+    st.success(f"✅ 紀錄成功已存入日誌！(評分: {score_val}分)")
     del st.session_state.last_analysis
 
 # ------------------------------------------
@@ -222,17 +245,24 @@ with tab1:
 with tab2:
   st.subheader("📖 我的飲食日誌")
   conn = get_db_connection()
-  df = pd.read_sql("SELECT * FROM food_logs ORDER BY date DESC", conn)
+  df = pd.read_sql(
+      "SELECT * FROM food_logs ORDER BY date DESC", conn
+  )
   conn.close()
   if df.empty:
     st.info("目前尚無飲食紀錄。")
   else:
     for _, row in df.iterrows():
-      with st.expander(f"⏰ {row['date']} - 【{row['meal_type']}】"):
+      score_display = (
+          f" ⭐ {int(row['score'])}分" if pd.notnull(row["score"]) else ""
+      )
+      with st.expander(
+          f"⏰ {row['date']} - 【{row['meal_type']}】{score_display}"
+      ):
         st.write(row["content"])
 
 # ------------------------------------------
-# TAB 3: 當日總結（目錄式收納選單）
+# TAB 3: 當日總結與歷史統計圖表
 # ------------------------------------------
 with tab3:
   st.subheader("⊙ 歷史與當日飲食總結目錄")
@@ -246,7 +276,7 @@ with tab3:
   try:
     conn = get_db_connection()
     df_sum = pd.read_sql(
-        "SELECT summary FROM daily_summaries WHERE date = %s",
+        "SELECT summary, score FROM daily_summaries WHERE date = %s",
         conn,
         params=(target_date_str,),
     )
@@ -255,7 +285,12 @@ with tab3:
     df_sum = pd.DataFrame()
 
   if not df_sum.empty:
-    st.success(f"📌 {target_date_str} 營養總結報告：")
+    day_score_text = (
+        f" (總結評分: {int(df_sum.iloc[0]['score'])}分)"
+        if pd.notnull(df_sum.iloc[0]["score"])
+        else ""
+    )
+    st.success(f"📌 {target_date_str} 營養總結報告{day_score_text}：")
     st.markdown(df_sum.iloc[0]["summary"])
   else:
     st.info(f"📅 尚無 {target_date_str} 的保存總結。")
@@ -281,7 +316,7 @@ with tab3:
                         請扮演專業營養師，根據用戶資料 {p} 與以下【{target_date_str}】的所有飲食紀錄：
                         {today_logs}
                         
-                        請給予：
+                        請務必在回覆最開頭明確給出當日的綜合健康評分，格式固定為：「[健康分數: 85分]」，接著提供：
                         1. 當日總熱量與三大營養素（蛋白質、脂肪、碳水化合物）的粗估加總。
                         2. 當日飲食的整體優缺點（是否有營養過剩或不足）。
                         3. 針對接下來的飲食調整建議。
@@ -290,13 +325,14 @@ with tab3:
                 model="gemini-3.6-flash", contents=prompt
             )
             summary_text = response.text
+            summary_score = extract_score(summary_text)
 
             conn = get_db_connection()
             c = conn.cursor()
             c.execute(
-                """INSERT INTO daily_summaries (date, summary) VALUES (%s, %s)
-                           ON CONFLICT (date) DO UPDATE SET summary = EXCLUDED.summary""",
-                (target_date_str, summary_text),
+                """INSERT INTO daily_summaries (date, summary, score) VALUES (%s, %s, %s)
+                           ON CONFLICT (date) DO UPDATE SET summary = EXCLUDED.summary, score = EXCLUDED.score""",
+                (target_date_str, summary_text, summary_score),
             )
             conn.commit()
             c.close()
@@ -308,11 +344,32 @@ with tab3:
             st.error(f"❌ 產生失敗：{e}")
 
   st.markdown("---")
+  st.markdown("### 📈 每日健康分數趨勢圖")
+  try:
+    conn = get_db_connection()
+    df_scores = pd.read_sql(
+        "SELECT date, score FROM daily_summaries WHERE score IS NOT NULL ORDER BY"
+        " date ASC",
+        conn,
+    )
+    conn.close()
+
+    if df_scores.empty:
+      st.info("目前尚無足夠的每日總結分數來繪製趨勢圖。")
+    else:
+      df_scores["date"] = pd.to_datetime(df_scores["date"])
+      df_scores.set_index("date", inplace=True)
+      st.line_chart(df_scores["score"])
+  except Exception:
+    st.info("目前尚無趨勢圖資料。")
+
+  st.markdown("---")
   st.markdown("### 📚 歷史總結目錄總覽")
   try:
     conn = get_db_connection()
     df_all_sums = pd.read_sql(
-        "SELECT date, summary FROM daily_summaries ORDER BY date DESC", conn
+        "SELECT date, summary, score FROM daily_summaries ORDER BY date DESC",
+        conn,
     )
     conn.close()
 
@@ -320,9 +377,12 @@ with tab3:
       st.info("目前尚無任何歷史總結紀錄。")
     else:
       for _, row in df_all_sums.iterrows():
-        with st.expander(
-            f"📂 營養總結報告：{row['date']} (點擊展開)"
-        ):
+        s_txt = (
+            f" - 綜合評分: {int(row['score'])}分"
+            if pd.notnull(row["score"])
+            else ""
+        )
+        with st.expander(f"📂 營養總結報告：{row['date']}{s_txt} (點擊展開)"):
           st.markdown(row["summary"])
   except Exception:
     st.info("目前尚無歷史總結目錄資料。")
