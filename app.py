@@ -420,37 +420,51 @@ with tab3:
     )
     conn.close()
 
-    if df_scores.empty:
-      st.info("目前尚無足夠的每日總結分數來繪製趨勢圖。")
-    else:
-      # 確保格式正確
+    # 建立最近 30 天的完整日曆網格，讓橫軸固定涵蓋 30 天不亂跑
+    end_date = pd.Timestamp.now().normalize()
+    start_date = end_date - pd.Timedelta(days=29)
+    full_dates = pd.date_range(start=start_date, end=end_date, freq="D")
+    df_full = pd.DataFrame({"date": full_dates})
+
+    if not df_scores.empty:
+      df_scores["date"] = pd.to_datetime(df_scores["date"]).dt.normalize()
       df_scores["score"] = pd.to_numeric(df_scores["score"], errors="coerce")
-      df_scores = df_scores.dropna(subset=["score"])
-      df_scores["date"] = pd.to_datetime(df_scores["date"])
+      df_merged = pd.merge(df_full, df_scores, on="date", how="left")
+    else:
+      df_merged = df_full
+      df_merged["score"] = None
 
-      # 使用 Altair 繪製精準圖表：固定縱軸 0 到 100，橫軸顯示日期
-      chart = (
-          alt.Chart(df_scores)
-          .mark_line(point=True, strokeWidth=3)
-          .encode(
-              x=alt.X("date:T", title="日期", axis=alt.Axis(format="%m/%d")),
-              y=alt.Y(
-                  "score:Q",
-                  title="健康分數",
-                  scale=alt.Scale(domain=[0, 100]),
-              ),
-              tooltip=[
-                  alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"),
-                  alt.Tooltip("score:Q", title="分數"),
-              ],
-          )
-          .properties(height=350)
-          .interactive()
-      )
+    # 使用 Altair 繪製精準圖表：固定橫軸為最近 30 天，縱軸 0 到 100
+    chart = (
+        alt.Chart(df_merged)
+        .mark_line(point=True, strokeWidth=3, connectNulls=True)
+        .encode(
+            x=alt.X(
+                "date:T",
+                title="日期",
+                scale=alt.Scale(
+                    domain=[
+                        start_date.strftime("%Y-%m-%d"),
+                        end_date.strftime("%Y-%m-%d"),
+                    ]
+                ),
+                axis=alt.Axis(format="%m/%d", tickCount=10),
+            ),
+            y=alt.Y(
+                "score:Q", title="健康分數", scale=alt.Scale(domain=[0, 100])
+            ),
+            tooltip=[
+                alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"),
+                alt.Tooltip("score:Q", title="分數"),
+            ],
+        )
+        .properties(height=350)
+        .interactive()
+    )
 
-      st.altair_chart(chart, use_container_width=True)
-  except Exception:
-    st.info("目前尚無趨勢圖資料。")
+    st.altair_chart(chart, use_container_width=True)
+  except Exception as e:
+    st.info(f"目前尚無趨勢圖資料。({e})")
 
   st.markdown("---")
   st.markdown("### 📚 歷史總結目錄總覽")
@@ -463,7 +477,7 @@ with tab3:
     conn.close()
 
     if df_all_sums.empty:
-      st.info("print('目前尚無任何歷史總結紀錄。')")
+      st.info("目前尚無任何歷史總結紀錄。")
     else:
       for _, row in df_all_sums.iterrows():
         s_txt = (
