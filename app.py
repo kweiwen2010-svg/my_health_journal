@@ -437,7 +437,7 @@ with tab3:
     # 使用 Altair 繪製精準圖表：固定橫軸為最近 30 天，縱軸 0 到 100
     chart = (
         alt.Chart(df_merged)
-        .mark_line(point=True, strokeWidth=3, connectNulls=True)
+        .mark_line(point=True, strokeWidth=3)
         .encode(
             x=alt.X(
                 "date:T",
