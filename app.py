@@ -109,32 +109,32 @@ def init_db():
   c.execute("""CREATE TABLE IF NOT EXISTS user_profile (
                  id INTEGER PRIMARY KEY, height REAL, weight REAL, age INTEGER, activity TEXT, medical TEXT)""")
 
-  # 擴充 user_profile 欄位以儲存體脂計數據
-  try:
-    c.execute("ALTER TABLE user_profile ADD COLUMN body_fat REAL;")
-  except Exception:
-    conn.rollback()
-
-  try:
-    c.execute("ALTER TABLE user_profile ADD COLUMN muscle_mass REAL;")
-  except Exception:
-    conn.rollback()
-
-  try:
-    c.execute("ALTER TABLE user_profile ADD COLUMN bmr REAL;")
-  except Exception:
-    conn.rollback()
+  # 自動檢查並補上缺少的欄位，避免 UndefinedColumn 錯誤
+  for col_def in [
+      "body_fat REAL",
+      "muscle_mass REAL",
+      "bmr REAL",
+      "score REAL",
+  ]:
+    try:
+      c.execute(f"ALTER TABLE user_profile ADD COLUMN {col_def};")
+      conn.commit()
+    except Exception:
+      conn.rollback()
 
   try:
     c.execute("ALTER TABLE food_logs ADD COLUMN score REAL;")
+    conn.commit()
   except Exception:
     conn.rollback()
 
   try:
     c.execute("ALTER TABLE daily_summaries ADD COLUMN score REAL;")
+    conn.commit()
   except Exception:
     conn.rollback()
 
+  # 初始化預設的使用者資料列
   c.execute(
       """INSERT INTO user_profile (id, height, weight, age, activity, medical, body_fat, muscle_mass, bmr) 
                  VALUES (1, 178.0, 75.0, 56, '中度運動', '無', 20.0, 55.0, 1500.0) 
@@ -163,7 +163,16 @@ def get_user_profile():
         "muscle_mass": 55.0,
         "bmr": 1500.0,
     }
-  return df.iloc[0].to_dict()
+  # 確保字典一定包含這些鍵值，防止舊資料庫缺欄位報錯
+  row = df.iloc[0].to_dict()
+  for k, default_val in [
+      ("body_fat", 20.0),
+      ("muscle_mass", 55.0),
+      ("bmr", 1500.0),
+  ]:
+    if k not in row or pd.isna(row[k]):
+      row[k] = default_val
+  return row
 
 
 def update_user_profile(data):
@@ -178,9 +187,9 @@ def update_user_profile(data):
           data["age"],
           data["activity"],
           data["medical"],
-          data.get("body_fat", 0.0),
-          data.get("muscle_mass", 0.0),
-          data.get("bmr", 0.0),
+          data.get("body_fat", 20.0),
+          data.get("muscle_mass", 55.0),
+          data.get("bmr", 1500.0),
       ),
   )
   conn.commit()
@@ -577,7 +586,6 @@ with tab4:
 
             parsed_data = json.loads(b_text)
 
-            # 更新至 session state 暫存，方便帶入下方表單
             st.session_state.parsed_weight = float(
                 parsed_data.get("weight", p["weight"])
             )
@@ -644,7 +652,6 @@ with tab4:
       }
       update_user_profile(new_p)
 
-      # 清除暫存
       for key in ["parsed_weight", "parsed_bf", "parsed_mm", "parsed_bmr"]:
         if key in st.session_state:
           del st.session_state[key]
