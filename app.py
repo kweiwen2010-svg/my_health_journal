@@ -109,6 +109,22 @@ def init_db():
   c.execute("""CREATE TABLE IF NOT EXISTS user_profile (
                  id INTEGER PRIMARY KEY, height REAL, weight REAL, age INTEGER, activity TEXT, medical TEXT)""")
 
+  # 擴充 user_profile 欄位以儲存體脂計數據
+  try:
+    c.execute("ALTER TABLE user_profile ADD COLUMN body_fat REAL;")
+  except Exception:
+    conn.rollback()
+
+  try:
+    c.execute("ALTER TABLE user_profile ADD COLUMN muscle_mass REAL;")
+  except Exception:
+    conn.rollback()
+
+  try:
+    c.execute("ALTER TABLE user_profile ADD COLUMN bmr REAL;")
+  except Exception:
+    conn.rollback()
+
   try:
     c.execute("ALTER TABLE food_logs ADD COLUMN score REAL;")
   except Exception:
@@ -120,8 +136,8 @@ def init_db():
     conn.rollback()
 
   c.execute(
-      """INSERT INTO user_profile (id, height, weight, age, activity, medical) 
-                 VALUES (1, 178.0, 75.0, 56, '中度運動', '無') 
+      """INSERT INTO user_profile (id, height, weight, age, activity, medical, body_fat, muscle_mass, bmr) 
+                 VALUES (1, 178.0, 75.0, 56, '中度運動', '無', 20.0, 55.0, 1500.0) 
                  ON CONFLICT (id) DO NOTHING"""
   )
   conn.commit()
@@ -143,6 +159,9 @@ def get_user_profile():
         "age": 56,
         "activity": "中度運動",
         "medical": "無",
+        "body_fat": 20.0,
+        "muscle_mass": 55.0,
+        "bmr": 1500.0,
     }
   return df.iloc[0].to_dict()
 
@@ -151,14 +170,17 @@ def update_user_profile(data):
   conn = get_db_connection()
   c = conn.cursor()
   c.execute(
-      "UPDATE user_profile SET height=%s, weight=%s, age=%s, activity=%s,"
-      " medical=%s WHERE id=1",
+      """UPDATE user_profile SET height=%s, weight=%s, age=%s, activity=%s, 
+             medical=%s, body_fat=%s, muscle_mass=%s, bmr=%s WHERE id=1""",
       (
           data["height"],
           data["weight"],
           data["age"],
           data["activity"],
           data["medical"],
+          data.get("body_fat", 0.0),
+          data.get("muscle_mass", 0.0),
+          data.get("bmr", 0.0),
       ),
   )
   conn.commit()
@@ -233,7 +255,6 @@ st.sidebar.info(
     "💡 如果側欄收合了，您也可以隨時從下方分頁或重新整理來控制。"
 )
 
-# 透過 JS 在頁面頂端建立一個極度顯眼的「打開側欄」浮動按鈕
 components.html(
     """
     <div style="position: fixed; top: 15px; left: 15px; z-index: 999999;">
@@ -278,7 +299,7 @@ with tab1:
           prompt = [
               f"""
                     你是一位專業營養師。請根據以下用戶資料分析照片中的餐點：
-                    - 用戶身型：{p['age']}歲, {p['height']}cm, {p['weight']}kg
+                    - 用戶身型：{p['age']}歲, {p['height']}cm, {p['weight']}kg (體脂率: {p.get('body_fat', 20)}%, 肌肉量: {p.get('muscle_mass', 55)}kg)
                     - 運動狀態：{p['activity']}
                     - 健康備註/過敏源：{p['medical']}
                     - 用戶補充說明：{user_note}
@@ -445,7 +466,6 @@ with tab3:
     )
     conn.close()
 
-    # 建立最近 30 天的完整日曆網格，讓橫軸固定涵蓋 30 天不亂跑
     end_date = pd.Timestamp.now().normalize()
     start_date = end_date - pd.Timedelta(days=29)
     full_dates = pd.date_range(start=start_date, end=end_date, freq="D")
@@ -459,7 +479,6 @@ with tab3:
       df_merged = df_full
       df_merged["score"] = None
 
-    # 使用 Altair 繪製精準圖表：固定橫軸為最近 30 天，縱軸 0 到 100
     chart = (
         alt.Chart(df_merged)
         .mark_line(point=True, strokeWidth=3)
@@ -516,15 +535,91 @@ with tab3:
     st.info("目前尚無歷史總結目錄資料。")
 
 # ------------------------------------------
-# TAB 4: 個人設定
+# TAB 4: 個人設定與體脂截圖讀取
 # ------------------------------------------
 with tab4:
-  st.subheader("⚙️ 個人檔案設定")
+  st.subheader("⚙️ 個人檔案設定 & 體脂計智慧讀卡機")
   p = get_user_profile()
 
+  # 1. 體脂計截圖自動讀取區塊
+  with st.expander("⚖️ 上傳體脂計截圖（AI 自動讀取數值）", expanded=False):
+    st.write(
+        "請上傳您量完體脂後的 App 畫面截圖，AI 將自動幫您擷取體重、體脂率、肌肉量與基礎代謝率！"
+    )
+    body_file = st.file_uploader(
+        "上傳體脂截圖", type=["jpg", "jpeg", "png"], key="body_fat_upload"
+    )
+    if body_file is not None:
+      b_img = Image.open(body_file)
+      st.image(b_img, caption="已上傳體脂截圖", use_container_width=True)
+
+      if st.button("🔍 AI 自動解析體脂數據"):
+        with st.spinner("AI 正在辨識截圖中的身體數據..."):
+          try:
+            b_prompt = [
+                """
+                            請讀取這張體脂計 App 的截圖，並嚴格以 JSON 格式回傳以下欄位（若找不到請填預設數字）：
+                            {"weight": 體重數字(float), "body_fat": 體脂肪率數字(float), "muscle_mass": 肌肉量數字(float), "bmr": 基礎代謝率數字(float)}
+                            只回傳 JSON 格式文字，不要有其他多餘的話。
+                            """,
+                b_img,
+            ]
+            b_res = client.models.generate_content(
+                model="gemini-3.6-flash", contents=b_prompt
+            )
+            import json
+
+            b_text = b_res.text.strip()
+            if b_text.startswith("```json"):
+              b_text = b_text[7:-3].strip()
+            elif b_text.startswith("```"):
+              b_text = b_text[3:-3].strip()
+
+            parsed_data = json.loads(b_text)
+
+            # 更新至 session state 暫存，方便帶入下方表單
+            st.session_state.parsed_weight = float(
+                parsed_data.get("weight", p["weight"])
+            )
+            st.session_state.parsed_bf = float(
+                parsed_data.get("body_fat", p.get("body_fat", 20.0))
+            )
+            st.session_state.parsed_mm = float(
+                parsed_data.get("muscle_mass", p.get("muscle_mass", 55.0))
+            )
+            st.session_state.parsed_bmr = float(
+                parsed_data.get("bmr", p.get("bmr", 1500.0))
+            )
+
+            st.success("✨ AI 成功解析截圖！請檢查下方數值並點擊儲存：")
+            st.write(f"- 體重: {st.session_state.parsed_weight} kg")
+            st.write(f"- 體脂肪率: {st.session_state.parsed_bf} %")
+            st.write(f"- 肌肉量: {st.session_state.parsed_mm} kg")
+            st.write(f"- 基礎代謝率: {st.session_state.parsed_bmr} kcal")
+
+          except Exception as e:
+            st.error(f"❌ 解析失敗：{e}")
+
+  # 2. 個人設定表單
   with st.form("profile_form"):
+    default_w = st.session_state.get(
+        "parsed_weight", float(p.get("weight", 75.0))
+    )
+    default_bf = st.session_state.get(
+        "parsed_bf", float(p.get("body_fat", 20.0))
+    )
+    default_mm = st.session_state.get(
+        "parsed_mm", float(p.get("muscle_mass", 55.0))
+    )
+    default_bmr = st.session_state.get(
+        "parsed_bmr", float(p.get("bmr", 1500.0))
+    )
+
     h_val = st.number_input("身高 (cm)", value=float(p["height"]))
-    w_val = st.number_input("體重 (kg)", value=float(p["weight"]))
+    w_val = st.number_input("體重 (kg)", value=default_w)
+    bf_val = st.number_input("體脂肪率 (%)", value=default_bf)
+    mm_val = st.number_input("肌肉量 (kg)", value=default_mm)
+    bmr_val = st.number_input("基礎代謝率 (BMR kcal)", value=default_bmr)
     a_val = st.number_input("年齡", value=int(p["age"]))
 
     activities = ["久坐不動", "輕度運動", "中度運動", "高度運動"]
@@ -535,7 +630,7 @@ with tab4:
 
     med_val = st.text_area("健康備註/過敏源", value=str(p["medical"]))
 
-    submitted = st.form_submit_button("💾 儲存個人資料")
+    submitted = st.form_submit_button("💾 儲存個人資料與體組成")
     if submitted:
       new_p = {
           "height": h_val,
@@ -543,6 +638,15 @@ with tab4:
           "age": a_val,
           "activity": act_val,
           "medical": med_val,
+          "body_fat": bf_val,
+          "muscle_mass": mm_val,
+          "bmr": bmr_val,
       }
       update_user_profile(new_p)
-      st.success("✅ 個人資料已成功儲存！")
+
+      # 清除暫存
+      for key in ["parsed_weight", "parsed_bf", "parsed_mm", "parsed_bmr"]:
+        if key in st.session_state:
+          del st.session_state[key]
+
+      st.success("✅ 個人資料與體組成數據已成功儲存！")
