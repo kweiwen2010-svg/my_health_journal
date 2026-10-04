@@ -226,7 +226,32 @@ def trigger_feedback(score):
 
 
 # ==========================================
-# 3. 介面結構（4 個分頁）
+# 3. 側欄設定 (在畫面上方注入超顯眼開關按鈕)
+# ==========================================
+st.sidebar.title("⚙️ 側欄選單 / 設定導覽")
+st.sidebar.info(
+    "💡 如果側欄收合了，您也可以隨時從下方分頁或重新整理來控制。"
+)
+
+# 透過 JS 在頁面頂端建立一個極度顯眼的「打開側欄」浮動按鈕
+components.html(
+    """
+    <div style="position: fixed; top: 15px; left: 15px; z-index: 999999;">
+        <button onclick="
+            const doc = window.parent.document;
+            const btn = doc.querySelector('[data-testid=\\'collapsedControl\\']') || doc.querySelector('button[kind=\\'header\\']');
+            if(btn) { btn.click(); }
+            else { alert('請點擊畫面左上角或右上角的選單按鈕'); }
+        " style="background-color: #2ecc71; color: white; border: none; padding: 12px 20px; font-size: 20px; font-weight: bold; border-radius: 30px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;">
+            📂 展開 / 收合側欄選單
+        </button>
+    </div>
+    """,
+    height=60,
+)
+
+# ==========================================
+# 4. 主介面結構（4 個分頁）
 # ==========================================
 st.title("🥗 AI 智慧營養管理")
 tab1, tab2, tab3, tab4 = st.tabs(["📸 記錄", "📖 日誌", "🤖 當日總結", "⚙️ 設定"])
